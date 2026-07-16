@@ -1,0 +1,8 @@
+fastapi>=0.110.0
+uvicorn>=0.28.0
+aiofiles>=23.2.1
+yt-dlp>=2024.3.10
+pysubs2>=1.6.1
+edge-tts>=6.1.9
+python-multipart>=0.0.9
+imageio-ffmpeg>=0.4.9
