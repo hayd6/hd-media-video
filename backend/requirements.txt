@@ -6,3 +6,4 @@ pysubs2>=1.6.1
 edge-tts>=6.1.9
 python-multipart>=0.0.9
 imageio-ffmpeg>=0.4.9
+requests>=2.31.0

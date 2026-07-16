@@ -4,6 +4,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -35,12 +36,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    html_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>HD Media API is running. Template not found.</h1>"
+
 # API schemas sử dụng Pydantic
 class JobCreate(BaseModel):
     url: str
     target_lang: Optional[str] = "Vietnamese"
     voice: Optional[str] = "vi-VN-HoaiMyNeural"
     mode: Optional[str] = "standard"
+    gemini_key: Optional[str] = None
     
     # Tùy chọn Reup Mode
     speed: Optional[float] = 1.0
@@ -66,6 +76,7 @@ class JobResponse(BaseModel):
     target_lang: str
     voice: str
     mode: str
+    gemini_key: Optional[str] = None
     created_at: str
     finished_at: Optional[str] = None
     processing_time: Optional[float] = None

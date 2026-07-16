@@ -23,6 +23,7 @@ def init_db():
         progress INTEGER DEFAULT 0,
         current_step TEXT DEFAULT 'Init',
         url TEXT NOT NULL,
+        gemini_key TEXT,
         
         target_lang TEXT DEFAULT 'Vietnamese',
         voice TEXT DEFAULT 'vi-VN-HoaiMyNeural',
@@ -116,7 +117,8 @@ def create_job(url: str, target_lang: str, voice: str, mode: str, **kwargs) -> D
         if k in [
             "speed", "brightness", "contrast", "saturation", "sharpen", "denoise",
             "mirror", "crop", "resize", "watermark_opacity", "watermark_size",
-            "watermark_position", "bg_music_volume", "watermark_path", "intro_path", "outro_path"
+            "watermark_position", "bg_music_volume", "watermark_path", "intro_path", "outro_path",
+            "gemini_key"
         ]:
             fields.append(k)
             # Chuyển đổi boolean thành integer cho SQLite

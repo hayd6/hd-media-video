@@ -6,6 +6,16 @@ import imageio_ffmpeg
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(BACKEND_DIR)
 
+# Tự động nạp file .env ở thư mục gốc (nếu có)
+ENV_FILE = os.path.join(BASE_DIR, ".env")
+if os.path.exists(ENV_FILE):
+    with open(ENV_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip()
+
 # Thư mục chứa dữ liệu tạm và đầu ra
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DOWNLOAD_DIR = os.path.join(DATA_DIR, "downloads")

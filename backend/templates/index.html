@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HD Media - AI Video Translator Platform</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        heading: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        dark: {
+                            900: '#0b0f19',
+                            800: '#111827',
+                            700: '#1f2937',
+                            600: '#374151',
+                        },
+                        brand: {
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            accent: '#a855f7',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #0b0f19;
+            color: #f3f4f6;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111827;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4f46e5;
+        }
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        /* Glowing effects */
+        .glow-hover:hover {
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen">
+    
+    <!-- Top Navbar -->
+    <nav class="border-b border-gray-800 bg-dark-900/80 sticky top-0 z-50 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-accent flex items-center justify-center shadow-lg shadow-brand-500/20">
+                        <i class="fa-solid fa-wand-magic-sparkles text-white text-lg"></i>
+                    </div>
+                    <div>
+                        <span class="font-heading font-extrabold text-2xl tracking-tight bg-gradient-to-r from-white via-gray-200 to-brand-accent bg-clip-text text-transparent">HD Media</span>
+                        <span class="text-xs block text-gray-500 font-medium tracking-widest uppercase">AI Video Translator</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div id="drive-auth-status" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass-panel border border-red-500/20 text-red-400">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                        Google Drive Offline
+                    </div>
+                    <button onclick="openSettingsModal()" class="w-10 h-10 rounded-xl glass-panel flex items-center justify-center text-gray-400 hover:text-white transition-colors duration-200 glow-hover">
+                        <i class="fa-solid fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Workspace -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Left 2 Columns: Input Form and Active Monitor -->
+            <div class="lg:col-span-2 space-y-8">
+                
+                <!-- Main Control Panel -->
+                <div class="glass-panel rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                    <!-- Background accent light -->
+                    <div class="absolute -right-24 -top-24 w-48 h-48 bg-brand-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                    
+                    <h2 class="font-heading font-bold text-xl mb-6 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-play text-brand-500"></i>
+                        Thiết lập dịch video mới
+                    </h2>
+                    
+                    <form id="job-form" onsubmit="submitJob(event)" class="space-y-6">
+                        
+                        <!-- URL Link Input -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-400 mb-2">Đường dẫn video (YouTube, TikTok, Facebook...)</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-500">
+                                    <i class="fa-solid fa-link"></i>
+                                </div>
+                                <input type="url" id="video-url" required
+                                    placeholder="Dán link video của bạn vào đây..." 
+                                    class="block w-full pl-11 pr-4 py-4 bg-dark-900 border border-gray-800 rounded-2xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Target Language -->
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-400 mb-2">Ngôn ngữ dịch</label>
+                                <select id="target-lang" onchange="updateVoiceOptions()" class="block w-full px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                                    <option value="Vietnamese">Tiếng Việt (Vietnamese)</option>
+                                    <option value="English">Tiếng Anh (English)</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Voice Selector -->
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-400 mb-2">Giọng đọc lồng tiếng (Edge TTS)</label>
+                                <select id="voice-select" class="block w-full px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                                    <!-- Nạp động -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Gemini Key -->
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-sm font-semibold text-gray-400">Khóa Gemini API của bạn</label>
+                                <span class="text-xs text-gray-500">Sẽ được lưu cục bộ trên máy</span>
+                            </div>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-500">
+                                    <i class="fa-solid fa-key"></i>
+                                </div>
+                                <input type="password" id="gemini-key" required
+                                    placeholder="Nhập API Key để dịch thuật..." 
+                                    class="block w-full pl-11 pr-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                            </div>
+                        </div>
+
+                        <!-- Mode Toggle -->
+                        <div class="border-t border-gray-800 pt-6">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <span class="font-semibold block">Chế độ Reup Mode (Biên tập nâng cao)</span>
+                                    <span class="text-xs text-gray-500 block">Bật các tính năng chỉnh sửa video lật hình, thay đổi tốc độ, chỉnh sáng...</span>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="reup-mode-toggle" onchange="toggleReupPanel()" class="sr-only peer">
+                                    <div class="w-14 h-7 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand-600"></div>
+                                </label>
+                            </div>
+                            
+                            <!-- Reup Panel -->
+                            <div id="reup-panel" class="hidden mt-6 bg-dark-900/50 p-6 rounded-2xl border border-gray-800/80 space-y-6">
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <!-- Speed -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Thay đổi tốc độ</label>
+                                        <select id="reup-speed" class="block w-full px-3 py-2 bg-dark-900 border border-gray-850 rounded-lg text-sm outline-none focus:border-brand-500">
+                                            <option value="0.9">0.90x (Chậm)</option>
+                                            <option value="0.95">0.95x</option>
+                                            <option value="1.0" selected>1.00x (Gốc)</option>
+                                            <option value="1.05">1.05x</option>
+                                            <option value="1.1">1.10x (Nhanh)</option>
+                                        </select>
+                                    </div>
+                                    <!-- Mirror -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Đối xứng (Mirror)</label>
+                                        <select id="reup-mirror" class="block w-full px-3 py-2 bg-dark-900 border border-gray-850 rounded-lg text-sm outline-none focus:border-brand-500">
+                                            <option value="none" selected>Không lật</option>
+                                            <option value="horizontal">Lật ngang (H-Flip)</option>
+                                            <option value="vertical">Lật dọc (V-Flip)</option>
+                                        </select>
+                                    </div>
+                                    <!-- Crop -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Cắt khung hình (Crop)</label>
+                                        <select id="reup-crop" class="block w-full px-3 py-2 bg-dark-900 border border-gray-850 rounded-lg text-sm outline-none focus:border-brand-500">
+                                            <option value="none" selected>Giữ nguyên</option>
+                                            <option value="9:16">Dọc (9:16 - Shorts)</option>
+                                            <option value="16:9">Ngang (16:9 - YouTube)</option>
+                                            <option value="1:1">Vuông (1:1 - Insta)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- Scale / Resize -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Độ phân giải (Resize)</label>
+                                        <select id="reup-resize" class="block w-full px-3 py-2 bg-dark-900 border border-gray-850 rounded-lg text-sm outline-none focus:border-brand-500">
+                                            <option value="none" selected>Giữ nguyên</option>
+                                            <option value="720p">HD (720P)</option>
+                                            <option value="1080p">FHD (1080P)</option>
+                                            <option value="2k">QHD (2K)</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Background Music Volume -->
+                                    <div>
+                                        <div class="flex justify-between items-center mb-1">
+                                            <label class="block text-xs font-semibold text-gray-400">Âm lượng nhạc nền: <span id="bg-volume-label">10%</span></label>
+                                        </div>
+                                        <input type="range" id="bg-volume" min="0" max="1" step="0.05" value="0.1" oninput="document.getElementById('bg-volume-label').innerText = Math.round(this.value*100)+'%'"
+                                            class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-brand-500">
+                                    </div>
+                                </div>
+
+                                <!-- Brightness / Contrast / Saturation Sliders -->
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-gray-800/60 pt-4">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-1">Độ sáng: <span id="brightness-label">0</span></label>
+                                        <input type="range" id="reup-brightness" min="-20" max="20" value="0" oninput="document.getElementById('brightness-label').innerText = this.value" class="w-full accent-brand-500 bg-gray-700 h-1 rounded-lg">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-1">Độ tương phản: <span id="contrast-label">0</span></label>
+                                        <input type="range" id="reup-contrast" min="-20" max="20" value="0" oninput="document.getElementById('contrast-label').innerText = this.value" class="w-full accent-brand-500 bg-gray-700 h-1 rounded-lg">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-1">Độ bão màu: <span id="saturation-label">0</span></label>
+                                        <input type="range" id="reup-saturation" min="-20" max="20" value="0" oninput="document.getElementById('saturation-label').innerText = this.value" class="w-full accent-brand-500 bg-gray-700 h-1 rounded-lg">
+                                    </div>
+                                </div>
+
+                                <!-- Checkbox Options -->
+                                <div class="flex flex-wrap gap-6 border-t border-gray-800/60 pt-4">
+                                    <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold">
+                                        <input type="checkbox" id="reup-sharpen" class="w-4 h-4 bg-dark-900 border-gray-800 text-brand-500 rounded focus:ring-brand-500">
+                                        Làm nét video (Sharpen)
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold">
+                                        <input type="checkbox" id="reup-denoise" class="w-4 h-4 bg-dark-900 border-gray-800 text-brand-500 rounded focus:ring-brand-500">
+                                        Khử nhiễu video (Denoise)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="pt-4">
+                            <button type="submit" class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-accent hover:from-brand-500 hover:to-indigo-500 text-white font-bold text-lg shadow-xl shadow-brand-600/20 hover:shadow-brand-600/35 transition-all duration-200 flex items-center justify-center gap-3">
+                                <i class="fa-solid fa-play"></i>
+                                Bắt đầu dịch tự động
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Active Job Progress Monitor -->
+                <div id="active-job-panel" class="hidden glass-panel rounded-3xl p-6 shadow-2xl space-y-6 relative border border-brand-500/20">
+                    <div class="absolute -left-24 -bottom-24 w-48 h-48 bg-brand-accent/5 rounded-full blur-3xl pointer-events-none"></div>
+                    
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="font-heading font-bold text-xl flex items-center gap-2">
+                                <span class="flex h-3 w-3 relative">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-500 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-3 w-3 bg-brand-600"></span>
+                                </span>
+                                Đang tiến hành xử lý video
+                            </h2>
+                            <span class="text-xs text-gray-500 block mt-1" id="active-job-url"></span>
+                        </div>
+                        <span id="active-job-pct" class="text-3xl font-heading font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-brand-500 to-brand-accent">0%</span>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-dark-900 rounded-full h-3.5 p-0.5 overflow-hidden border border-gray-800">
+                        <div id="active-job-bar" class="bg-gradient-to-r from-brand-600 to-brand-accent h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+
+                    <!-- Pipeline Steps Grid -->
+                    <div class="grid grid-cols-2 sm:grid-cols-6 gap-3 text-center text-xs font-bold pt-2">
+                        <div id="step-Download" class="p-2.5 rounded-xl bg-dark-900 text-gray-500 border border-transparent">Tải video & audio</div>
+                        <div id="step-Speech" class="p-2.5 rounded-xl bg-dark-900 text-gray-500 border border-transparent">Whisper Speech</div>
+                        <div id="step-Translate" class="p-2.5 rounded-xl bg-dark-900 text-gray-500 border border-transparent">Dịch thuật Gemini</div>
+                        <div id="step-Voice" class="p-2.5 rounded-xl bg-dark-900 text-gray-500 border border-transparent">Lồng tiếng TTS</div>
+                        <div id="step-Render" class="p-2.5 rounded-xl bg-dark-900 text-gray-500 border border-transparent">FFmpeg Render</div>
+                        <div id="step-Done" class="p-2.5 rounded-xl bg-dark-900 text-gray-500 border border-transparent">Hoàn tất</div>
+                    </div>
+
+                    <!-- Live Log Terminal -->
+                    <div class="space-y-2">
+                        <span class="text-xs font-semibold text-gray-400 flex items-center gap-2">
+                            <i class="fa-solid fa-terminal text-brand-500"></i>
+                            Nhật ký xử lý chi tiết (Real-time Log)
+                        </span>
+                        <div id="terminal-log" class="w-full h-44 bg-dark-900 border border-gray-800 rounded-2xl p-4 font-mono text-xs overflow-y-auto text-emerald-400 space-y-1">
+                            <!-- Nạp log thời gian thực -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Column: History & Queue List -->
+            <div class="space-y-8">
+                
+                <!-- History Center Panel -->
+                <div class="glass-panel rounded-3xl p-6 shadow-2xl flex flex-col h-[700px]">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="font-heading font-bold text-xl flex items-center gap-2">
+                            <i class="fa-solid fa-history text-brand-accent"></i>
+                            Lịch sử tác vụ (History)
+                        </h2>
+                        <button onclick="loadHistory()" class="w-8 h-8 rounded-lg glass-panel hover:text-white flex items-center justify-center transition-colors text-gray-400">
+                            <i class="fa-solid fa-sync text-xs"></i>
+                        </button>
+                    </div>
+
+                    <!-- Search / Filter -->
+                    <div class="relative mb-4">
+                        <input type="text" id="search-history" oninput="filterHistory()" placeholder="Tìm kiếm video..." class="w-full pl-9 pr-4 py-2.5 bg-dark-900 text-sm border border-gray-800 rounded-xl focus:border-brand-500 outline-none">
+                        <span class="absolute left-3 top-3.5 text-gray-500 text-xs">
+                            <i class="fa-solid fa-search"></i>
+                        </span>
+                    </div>
+
+                    <!-- History Job List -->
+                    <div id="history-list" class="flex-1 overflow-y-auto space-y-4 pr-1">
+                        <!-- Nạp danh sách tác vụ -->
+                        <div class="text-center py-12 text-gray-500 text-sm">
+                            <i class="fa-solid fa-inbox text-3xl mb-3 block"></i>
+                            Không có tác vụ nào
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Google Drive Settings / Token Modal -->
+    <div id="settings-modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="glass-panel max-w-md w-full rounded-3xl p-6 border border-gray-800 shadow-2xl">
+            <div class="flex justify-between items-start mb-6">
+                <h3 class="font-heading font-bold text-lg flex items-center gap-2">
+                    <i class="fa-brands fa-google-drive text-brand-accent"></i>
+                    Kết nối Google Drive API
+                </h3>
+                <button onclick="closeSettingsModal()" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <p class="text-sm text-gray-400 leading-relaxed">
+                    Sau khi liên kết, hệ thống sẽ tự động tạo thư mục và tải video, phụ đề, ảnh thu nhỏ, file SEO lên Google Drive của bạn sau khi render xong.
+                </p>
+
+                <!-- Status details -->
+                <div class="p-4 bg-dark-900 rounded-2xl border border-gray-800/80 space-y-3">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-400 font-medium">Trạng thái liên kết:</span>
+                        <span id="modal-auth-status" class="font-bold text-red-500">Chưa liên kết</span>
+                    </div>
+                    <div class="text-xs text-gray-500 leading-relaxed">
+                        *Lưu ý: Để chạy thực tế, bạn cần lưu trữ cấu hình file token.json hoặc chạy Google OAuth qua luồng web.
+                    </div>
+                </div>
+
+                <!-- Simulation Toggle -->
+                <div class="p-4 bg-dark-900 rounded-2xl border border-gray-800/80 flex items-center justify-between text-sm">
+                    <div>
+                        <span class="font-bold block">Chế độ giả lập Drive</span>
+                        <span class="text-xs text-gray-500">Bỏ qua liên kết thực, dùng Link giả lập để test</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="mock-drive-toggle" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                    </label>
+                </div>
+
+                <div class="pt-4 flex gap-3">
+                    <button onclick="loginGoogle()" class="flex-1 py-3 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm transition-colors duration-200">
+                        Đăng nhập Google
+                    </button>
+                    <button onclick="closeSettingsModal()" class="py-3 px-4 rounded-xl glass-panel text-gray-300 font-semibold text-sm hover:text-white transition-colors duration-200">
+                        Đóng
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Frontend logic in JavaScript -->
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let activeJobInterval = null;
+        let historyData = [];
+
+        // Tiếng nói mẫu tương ứng với từng ngôn ngữ
+        const VOICES_MAP = {
+            "Vietnamese": [
+                { value: "vi-VN-HoaiMyNeural", label: "Hoài My (Nữ)" },
+                { value: "vi-VN-NamMinhNeural", label: "Nam Minh (Nam)" }
+            ],
+            "English": [
+                { value: "en-US-JennyNeural", label: "Jenny (Female)" },
+                { value: "en-US-GuyNeural", label: "Guy (Male)" }
+            ]
+        };
+
+        // Khi load trang
+        window.addEventListener("DOMContentLoaded", () => {
+            // Load key Gemini từ localStorage nếu có
+            const savedKey = localStorage.getItem("gemini_api_key");
+            if (savedKey) {
+                document.getElementById("gemini-key").value = savedKey;
+            }
+
+            updateVoiceOptions();
+            loadHistory();
+            checkDriveAuth();
+        });
+
+        function updateVoiceOptions() {
+            const lang = document.getElementById("target-lang").value;
+            const select = document.getElementById("voice-select");
+            select.innerHTML = "";
+            
+            const options = VOICES_MAP[lang] || VOICES_MAP["Vietnamese"];
+            options.forEach(opt => {
+                const el = document.createElement("option");
+                el.value = opt.value;
+                el.innerText = opt.label;
+                select.appendChild(el);
+            });
+        }
+
+        function toggleReupPanel() {
+            const show = document.getElementById("reup-mode-toggle").checked;
+            const panel = document.getElementById("reup-panel");
+            if (show) {
+                panel.classList.remove("hidden");
+            } else {
+                panel.classList.add("hidden");
+            }
+        }
+
+        // --- Modals ---
+        function openSettingsModal() {
+            document.getElementById("settings-modal").classList.remove("hidden");
+            checkDriveAuth();
+        }
+
+        function closeSettingsModal() {
+            document.getElementById("settings-modal").classList.add("hidden");
+        }
+
+        // --- API Calls ---
+        async function checkDriveAuth() {
+            try {
+                // Giả lập hoặc kiểm tra thực từ API token
+                const mockToggle = document.getElementById("mock-drive-toggle").checked;
+                const statusDiv = document.getElementById("drive-auth-status");
+                const modalStatus = document.getElementById("modal-auth-status");
+
+                if (mockToggle) {
+                    statusDiv.className = "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass-panel border border-emerald-500/20 text-emerald-400";
+                    statusDiv.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>Google Drive Mocked';
+                    modalStatus.className = "font-bold text-emerald-500";
+                    modalStatus.innerText = "Đã kết nối (Giả lập)";
+                } else {
+                    statusDiv.className = "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass-panel border border-red-500/20 text-red-400";
+                    statusDiv.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span>Google Drive Offline';
+                    modalStatus.className = "font-bold text-red-500";
+                    modalStatus.innerText = "Chưa liên kết";
+                }
+            } catch (err) {
+                console.error("Lỗi kiểm tra Auth:", err);
+            }
+        }
+
+        async function loginGoogle() {
+            try {
+                const res = await fetch(`${API_URL}/api/google/login`, { method: "POST" });
+                const data = await res.json();
+                alert(data.message + "\n(Tính năng đăng nhập thật yêu cầu đăng ký Google Client ID)");
+            } catch (err) {
+                alert("Lỗi liên kết Google: " + err.message);
+            }
+        }
+
+        // Tạo Job mới
+        async function submitJob(event) {
+            event.preventDefault();
+            
+            const url = document.getElementById("video-url").value;
+            const target_lang = document.getElementById("target-lang").value;
+            const voice = document.getElementById("voice-select").value;
+            const gemini_key = document.getElementById("gemini-key").value;
+            
+            // Lưu key vào local storage
+            localStorage.setItem("gemini_api_key", gemini_key);
+
+            const isReup = document.getElementById("reup-mode-toggle").checked;
+            
+            let payload = {
+                url,
+                target_lang,
+                voice,
+                gemini_key,
+                mode: isReup ? "reup" : "standard"
+            };
+
+            if (isReup) {
+                payload.speed = parseFloat(document.getElementById("reup-speed").value);
+                payload.mirror = document.getElementById("reup-mirror").value;
+                payload.crop = document.getElementById("reup-crop").value;
+                payload.resize = document.getElementById("reup-resize").value;
+                payload.bg_music_volume = parseFloat(document.getElementById("bg-volume").value);
+                payload.brightness = parseFloat(document.getElementById("reup-brightness").value);
+                payload.contrast = parseFloat(document.getElementById("reup-contrast").value);
+                payload.saturation = parseFloat(document.getElementById("reup-saturation").value);
+                payload.sharpen = document.getElementById("reup-sharpen").checked;
+                payload.denoise = document.getElementById("reup-denoise").checked;
+            }
+
+            try {
+                const res = await fetch(`${API_URL}/api/jobs`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.detail || "Không thể tạo Job.");
+                }
+                
+                const job = await res.json();
+                startMonitoringJob(job.id);
+                loadHistory();
+                
+                // Clear URL input
+                document.getElementById("video-url").value = "";
+            } catch (err) {
+                alert("Lỗi: " + err.message);
+            }
+        }
+
+        // Theo dõi tiến trình Job
+        function startMonitoringJob(jobId) {
+            if (activeJobInterval) {
+                clearInterval(activeJobInterval);
+            }
+
+            document.getElementById("active-job-panel").classList.remove("hidden");
+            const terminal = document.getElementById("terminal-log");
+            terminal.innerHTML = "<div class='text-gray-500'>Đang kết nối hàng đợi...</div>";
+
+            activeJobInterval = setInterval(async () => {
+                try {
+                    // 1. Đọc trạng thái Job
+                    const resJob = await fetch(`${API_URL}/api/jobs/${jobId}`);
+                    if (!resJob.ok) return;
+                    const job = await resJob.json();
+
+                    // Cập nhật giao diện tiến độ
+                    document.getElementById("active-job-pct").innerText = `${job.progress}%`;
+                    document.getElementById("active-job-bar").style.width = `${job.progress}%`;
+                    document.getElementById("active-job-url").innerText = job.url;
+
+                    // Reset màu tất cả các bước
+                    const steps = ["Download", "Speech", "Translate", "Voice", "Render", "Done"];
+                    steps.forEach(s => {
+                        const el = document.getElementById(`step-${s}`);
+                        if (el) {
+                            el.className = "p-2.5 rounded-xl bg-dark-900 text-gray-500 border border-transparent";
+                        }
+                    });
+
+                    // Cập nhật màu các bước dựa theo step hiện tại
+                    let activeStep = job.current_step;
+                    let targetStepId = "";
+                    if (activeStep === "Download") targetStepId = "step-Download";
+                    else if (activeStep === "Speech Recognition") targetStepId = "step-Speech";
+                    else if (activeStep === "Translate") targetStepId = "step-Translate";
+                    else if (activeStep === "Voice") targetStepId = "step-Voice";
+                    else if (activeStep === "Render") targetStepId = "step-Render";
+                    else if (activeStep === "Done") targetStepId = "step-Done";
+
+                    if (targetStepId) {
+                        const activeEl = document.getElementById(targetStepId);
+                        if (activeEl) {
+                            activeEl.className = "p-2.5 rounded-xl bg-brand-600/10 text-brand-400 border border-brand-500/30 animate-pulse";
+                        }
+                    }
+
+                    // 2. Lấy Logs của Job
+                    const resLogs = await fetch(`${API_URL}/api/jobs/${jobId}/logs`);
+                    if (resLogs.ok) {
+                        const logs = await resLogs.json();
+                        terminal.innerHTML = "";
+                        logs.forEach(log => {
+                            const timeStr = log.timestamp.split("T")[1].substring(0, 8);
+                            const logLine = document.createElement("div");
+                            logLine.innerHTML = `<span class='text-gray-500'>[${timeStr}]</span> <span class='text-brand-accent'>[${log.step}]</span> ${log.message}`;
+                            terminal.appendChild(logLine);
+                        });
+                        // Tự cuộn xuống cuối terminal
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+
+                    // Dừng nếu hoàn tất hoặc lỗi
+                    if (job.status === "completed") {
+                        clearInterval(activeJobInterval);
+                        addSuccessTerminalLog("Quy trình xử lý hoàn tất thành công!");
+                        loadHistory();
+                        // Đổi nút completed về xanh lá
+                        const doneEl = document.getElementById("step-Done");
+                        if (doneEl) doneEl.className = "p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                    } else if (job.status === "failed") {
+                        clearInterval(activeJobInterval);
+                        addErrorTerminalLog("Tác vụ xử lý thất bại: " + job.error_message);
+                        loadHistory();
+                    }
+
+                } catch (err) {
+                    console.error("Lỗi theo dõi Job:", err);
+                }
+            }, 1500);
+        }
+
+        function addSuccessTerminalLog(msg) {
+            const terminal = document.getElementById("terminal-log");
+            const logLine = document.createElement("div");
+            logLine.className = "text-emerald-300 font-bold mt-2";
+            logLine.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${msg}`;
+            terminal.appendChild(logLine);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function addErrorTerminalLog(msg) {
+            const terminal = document.getElementById("terminal-log");
+            const logLine = document.createElement("div");
+            logLine.className = "text-rose-400 font-bold mt-2";
+            logLine.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> ${msg}`;
+            terminal.appendChild(logLine);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        // Lấy lịch sử Job
+        async function loadHistory() {
+            try {
+                const res = await fetch(`${API_URL}/api/jobs`);
+                if (!res.ok) return;
+                historyData = await res.json();
+                renderHistoryList(historyData);
+            } catch (err) {
+                console.error("Lỗi tải lịch sử:", err);
+            }
+        }
+
+        function renderHistoryList(jobs) {
+            const list = document.getElementById("history-list");
+            list.innerHTML = "";
+            
+            if (jobs.length === 0) {
+                list.innerHTML = `
+                    <div class="text-center py-12 text-gray-500 text-sm">
+                        <i class="fa-solid fa-inbox text-3xl mb-3 block"></i>
+                        Không có tác vụ nào
+                    </div>`;
+                return;
+            }
+
+            jobs.forEach(job => {
+                const item = document.createElement("div");
+                // Class name dynamic by status
+                let borderClass = "border-gray-800/80";
+                let statusBadge = "";
+                
+                if (job.status === "completed") {
+                    borderClass = "border-emerald-500/10 hover:border-emerald-500/30";
+                    statusBadge = '<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">Thành công</span>';
+                } else if (job.status === "failed") {
+                    borderClass = "border-rose-500/10 hover:border-rose-500/30";
+                    statusBadge = '<span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 text-[10px] font-bold">Thất bại</span>';
+                } else {
+                    borderClass = "border-brand-500/10 hover:border-brand-500/30";
+                    statusBadge = `<span class="px-2 py-0.5 rounded bg-brand-500/10 text-brand-400 text-[10px] font-bold animate-pulse">${job.current_step}...</span>`;
+                }
+
+                // Cắt ngắn URL để hiển thị
+                const shortUrl = job.url.length > 32 ? job.url.substring(0, 30) + "..." : job.url;
+
+                item.className = `p-4 bg-dark-900/60 border ${borderClass} rounded-2xl transition-all duration-200 space-y-3`;
+                item.innerHTML = `
+                    <div class="flex items-start justify-between">
+                        <div class="space-y-1">
+                            <span class="text-xs font-semibold text-gray-500 block">ID: #${job.id} • ${statusBadge}</span>
+                            <a href="${job.url}" target="_blank" class="text-sm font-bold text-gray-200 hover:text-brand-400 break-all transition-colors flex items-center gap-1.5">
+                                <i class="fa-solid fa-external-link text-[10px] text-gray-500"></i>
+                                ${shortUrl}
+                            </a>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <button onclick="deleteJob(${job.id})" class="w-7 h-7 rounded bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white flex items-center justify-center text-xs transition-colors duration-200">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-wrap items-center justify-between text-xs text-gray-400 pt-2 border-t border-gray-800/40">
+                        <span class="flex items-center gap-1"><i class="fa-solid fa-language text-gray-500"></i> Dịch sang ${job.target_lang}</span>
+                        <span class="flex items-center gap-1"><i class="fa-solid fa-sliders text-gray-500"></i> ${job.mode === "reup" ? "Reup Mode" : "Standard"}</span>
+                    </div>
+
+                    ${job.status === "completed" ? `
+                    <div class="grid grid-cols-2 gap-2 pt-1.5">
+                        ${job.drive_link ? `
+                        <a href="${job.drive_link}" target="_blank" class="py-2 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white text-center text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1">
+                            <i class="fa-brands fa-google-drive"></i> Drive Link
+                        </a>` : ''}
+                        <button onclick="startMonitoringJob(${job.id})" class="py-2 px-3 rounded-lg bg-brand-600/10 hover:bg-brand-600 text-brand-400 hover:text-white text-center text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-list-check"></i> Xem Logs
+                        </button>
+                    </div>
+                    ` : ''}
+
+                    ${job.status === "failed" ? `
+                    <div class="pt-1.5">
+                        <button onclick="retryJob(${job.id})" class="w-full py-2 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-600 text-amber-400 hover:text-white text-center text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-arrow-rotate-right"></i> Thử lại tác vụ
+                        </button>
+                    </div>
+                    ` : ''}
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function filterHistory() {
+            const val = document.getElementById("search-history").value.toLowerCase();
+            const filtered = historyData.filter(job => job.url.toLowerCase().includes(val));
+            renderHistoryList(filtered);
+        }
+
+        async function deleteJob(jobId) {
+            if (!confirm("Bạn có chắc chắn muốn xóa tác vụ này?")) return;
+            try {
+                const res = await fetch(`${API_URL}/api/jobs/${jobId}`, { method: "DELETE" });
+                if (res.ok) {
+                    loadHistory();
+                    // Ẩn panel active nếu xóa chính job đang theo dõi
+                    document.getElementById("active-job-panel").classList.add("hidden");
+                    if (activeJobInterval) clearInterval(activeJobInterval);
+                }
+            } catch (err) {
+                alert("Lỗi khi xóa: " + err.message);
+            }
+        }
+
+        async function retryJob(jobId) {
+            try {
+                const res = await fetch(`${API_URL}/api/jobs/${jobId}/retry`, { method: "POST" });
+                if (res.ok) {
+                    const job = await res.json();
+                    startMonitoringJob(job.id);
+                    loadHistory();
+                }
+            } catch (err) {
+                alert("Lỗi khi thử lại: " + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
