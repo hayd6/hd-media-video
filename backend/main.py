@@ -3,13 +3,16 @@ from typing import List, Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import database
+import drive_service
 from queue_manager import job_queue
+from config import OUTPUT_DIR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,6 +39,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Phục vụ thư mục chứa file đầu ra để Frontend phát video và download trực tiếp
+app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     html_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
@@ -50,7 +56,6 @@ class JobCreate(BaseModel):
     target_lang: Optional[str] = "Vietnamese"
     voice: Optional[str] = "vi-VN-HoaiMyNeural"
     mode: Optional[str] = "standard"
-    gemini_key: Optional[str] = None
     
     # Tùy chọn Reup Mode
     speed: Optional[float] = 1.0
@@ -76,7 +81,6 @@ class JobResponse(BaseModel):
     target_lang: str
     voice: str
     mode: str
-    gemini_key: Optional[str] = None
     created_at: str
     finished_at: Optional[str] = None
     processing_time: Optional[float] = None
@@ -154,12 +158,64 @@ def get_job_logs(job_id: int):
 def google_login():
     return {"message": "Bắt đầu đăng nhập Google OAuth2 (Giả lập)..."}
 
+@app.get("/api/google/status")
+def google_status():
+    return {"authenticated": drive_service.is_authenticated()}
+
+def background_upload_task(job_id: int):
+    # Cập nhật trạng thái bắt đầu upload
+    database.update_job(job_id, drive_upload_status="uploading")
+    database.add_job_log(job_id, "Drive", "Bắt đầu tải các tệp tin kết quả lên Google Drive...")
+    
+    job = database.get_job(job_id)
+    if not job:
+        return
+        
+    output_video_path = job.get("output_video_path")
+    if not output_video_path or not os.path.exists(output_video_path):
+        database.update_job(job_id, drive_upload_status="failed")
+        database.add_job_log(job_id, "Drive", "Lỗi: Không tìm thấy file video đã kết xuất.")
+        return
+        
+    output_dir = os.path.dirname(output_video_path)
+    
+    # Thu thập tất cả các tài nguyên của job để tải lên thư mục tương ứng trên Drive
+    assets = {
+        "video": output_video_path,
+        "subtitle_ass": job.get("ass_path"),
+        "subtitle_srt": job.get("srt_path"),
+        "audio": job.get("dubbed_audio_path"),
+        "thumbnail": job.get("thumbnail_path"),
+        "seo": os.path.join(output_dir, f"job_{job_id}_seo.txt")
+    }
+    
+    try:
+        drive_res = drive_service.upload_job_assets(job_id, assets)
+        database.update_job(
+            job_id,
+            drive_link=drive_res.get("drive_link"),
+            drive_file_id=drive_res.get("drive_file_id"),
+            drive_upload_status=drive_res.get("drive_upload_status")
+        )
+        if drive_res.get("drive_upload_status") == "completed":
+            database.add_job_log(job_id, "Drive", f"Tải lên Google Drive thành công! Link: {drive_res.get('drive_link')}")
+        else:
+            database.add_job_log(job_id, "Drive", f"Tải lên Google Drive thất bại: {drive_res.get('error_message')}")
+    except Exception as e:
+        database.update_job(job_id, drive_upload_status="failed")
+        database.add_job_log(job_id, "Drive", f"Lỗi xảy ra khi upload: {str(e)}")
+
 @app.post("/api/google/upload/{job_id}")
-def google_upload(job_id: int):
+def google_upload(job_id: int, background_tasks: BackgroundTasks):
     job = database.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy Job.")
-    return {"message": f"Bắt đầu upload các file của Job {job_id} lên Google Drive..."}
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Video chưa được render hoàn chỉnh. Không thể tải lên.")
+        
+    # Thêm background task để upload không làm nghẽn API chính
+    background_tasks.add_task(background_upload_task, job_id)
+    return {"message": f"Đã bắt đầu tải video của Job {job_id} lên Google Drive trong nền."}
 
 @app.get("/api/google/files/{job_id}")
 def get_drive_files(job_id: int):

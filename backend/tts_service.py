@@ -228,14 +228,16 @@ def apply_audio_ducking(original_audio_path: str, dubbed_audio_path: str, segmen
     reduction = 1.0 - bg_music_volume
     terms = []
     for seg in segments:
-        terms.append(f"between(t,{seg['start']},{seg['end']})")
+        # Escape commas as \\, for FFmpeg filter parameter safety
+        terms.append(f"between(t\\,{seg['start']}\\,{seg['end']})")
         
     if terms:
         sum_expression = " + ".join(terms)
-        filter_expr = f"[0:a]volume=1.0-{reduction}*({sum_expression}):eval=frame[bg];[bg][1:a]amix=inputs=2:duration=first[out]"
+        # Wrap expression in single quotes
+        filter_expr = f"[0:a]volume='1.0-{reduction}*({sum_expression})':eval=frame[bg];[bg][1:a]amix=inputs=2:duration=first[out]"
     else:
         # Nếu không có phân đoạn nào nói, chỉ trộn đơn thuần hoặc giữ nguyên nhạc nền
-        filter_expr = "[0:a]volume=1.0[bg];[bg][1:a]amix=inputs=2:duration=first[out]"
+        filter_expr = "[0:a]volume='1.0'[bg];[bg][1:a]amix=inputs=2:duration=first[out]"
         
     command = [
         FFMPEG_PATH,

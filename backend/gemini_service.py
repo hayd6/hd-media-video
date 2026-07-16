@@ -1,12 +1,40 @@
 import os
+import time
 import base64
 import json
 import logging
 import subprocess
 import requests
-from config import FFMPEG_PATH
+from config import FFMPEG_PATH, GEMINI_MODEL
 
 logger = logging.getLogger("gemini_service")
+
+def gemini_post_request(url: str, headers: dict, json_payload: dict, max_retries: int = 3, timeout: int = 120) -> requests.Response:
+    """
+    Thực hiện gửi yêu cầu POST đến Gemini API với cơ chế tự động thử lại (Retry) và Timeout lớn
+    để phòng tránh các lỗi nghẽn mạng hoặc xử lý quá hạn từ phía máy chủ Google.
+    """
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Đang gọi Gemini API (Lần {attempt}/{max_retries}, timeout={timeout}s)...")
+            response = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+            
+            # Tự động thử lại nếu gặp lỗi nghẽn/hạn chế (429) hoặc lỗi máy chủ tạm thời (5xx)
+            if response.status_code in [429, 500, 502, 503, 504]:
+                logger.warning(f"Gemini API trả về lỗi tạm thời {response.status_code}. Đang chờ để thử lại...")
+                time.sleep(2 * attempt)
+                continue
+                
+            return response
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            logger.warning(f"Lỗi Timeout hoặc Kết nối khi gọi Gemini API (Lần {attempt}): {e}")
+            last_err = e
+            time.sleep(3 * attempt)
+            
+    if last_err:
+        raise last_err
+    raise Exception("Không thể kết nối tới Gemini API sau nhiều lần thử lại.")
 
 def compress_audio_to_mp3(wav_path: str) -> str:
     """
@@ -87,7 +115,7 @@ def transcribe_audio(audio_path: str, api_key: str) -> list:
         except Exception:
             pass
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     
     prompt = (
         "Lắng nghe kỹ file âm thanh này và nhận diện giọng nói (Speech-to-Text). "
@@ -138,7 +166,7 @@ def transcribe_audio(audio_path: str, api_key: str) -> list:
     
     headers = {"Content-Type": "application/json"}
     
-    response = requests.post(url, headers=headers, json=payload)
+    response = gemini_post_request(url, headers=headers, json_payload=payload)
     if response.status_code != 200:
         raise Exception(f"Gemini API Error (status {response.status_code}): {response.text}")
         
@@ -158,7 +186,7 @@ def translate_segments(segments: list, target_lang: str, api_key: str) -> list:
     if not segments:
         return []
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     
     prompt = (
         f"Hãy đóng vai trò là một biên dịch viên phụ đề chuyên nghiệp. "
@@ -202,7 +230,7 @@ def translate_segments(segments: list, target_lang: str, api_key: str) -> list:
     
     headers = {"Content-Type": "application/json"}
     
-    response = requests.post(url, headers=headers, json=payload)
+    response = gemini_post_request(url, headers=headers, json_payload=payload)
     if response.status_code != 200:
         raise Exception(f"Gemini Translation API Error (status {response.status_code}): {response.text}")
         
@@ -218,7 +246,7 @@ def generate_seo(transcript_text: str, target_lang: str, api_key: str) -> dict:
     """
     Sinh nội dung SEO (Tiêu đề, mô tả tóm tắt, thẻ hashtags) dựa vào nội dung hội thoại của video.
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     
     prompt = (
         f"Dựa vào nội dung cuộc hội thoại trong video sau đây, hãy viết tiêu đề SEO cuốn hút, "
@@ -259,7 +287,7 @@ def generate_seo(transcript_text: str, target_lang: str, api_key: str) -> dict:
     headers = {"Content-Type": "application/json"}
     
     logger.info("Đang gọi Gemini API để sinh tiêu đề & SEO cho video...")
-    response = requests.post(url, headers=headers, json=payload)
+    response = gemini_post_request(url, headers=headers, json_payload=payload)
     
     if response.status_code != 200:
         raise Exception(f"Gemini SEO API Error (status {response.status_code}): {response.text}")

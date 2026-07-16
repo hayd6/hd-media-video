@@ -148,21 +148,6 @@
                             </div>
                         </div>
 
-                        <!-- Gemini Key -->
-                        <div>
-                            <div class="flex justify-between items-center mb-2">
-                                <label class="block text-sm font-semibold text-gray-400">Khóa Gemini API của bạn</label>
-                                <span class="text-xs text-gray-500">Sẽ được lưu cục bộ trên máy</span>
-                            </div>
-                            <div class="relative">
-                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-500">
-                                    <i class="fa-solid fa-key"></i>
-                                </div>
-                                <input type="password" id="gemini-key" required
-                                    placeholder="Nhập API Key để dịch thuật..." 
-                                    class="block w-full pl-11 pr-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
-                            </div>
-                        </div>
 
                         <!-- Mode Toggle -->
                         <div class="border-t border-gray-800 pt-6">
@@ -317,6 +302,55 @@
                             <!-- Nạp log thời gian thực -->
                         </div>
                     </div>
+
+                    <!-- Video Preview & Option Action Buttons (Show on Complete) -->
+                    <div id="job-result-panel" class="hidden border-t border-gray-800 pt-6 space-y-4">
+                        <span class="text-xs font-semibold text-gray-400 flex items-center gap-2">
+                            <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                            Xem trước Video đã dịch hoàn tất
+                        </span>
+                        
+                        <!-- Video Player -->
+                        <div class="relative rounded-2xl overflow-hidden border border-gray-800 bg-black aspect-video flex items-center justify-center">
+                            <video id="result-video-player" controls class="w-full h-full max-h-[360px]">
+                                <source id="result-video-source" src="" type="video/mp4">
+                                Trình duyệt của bạn không hỗ trợ phát thẻ video.
+                            </video>
+                        </div>
+                        
+                        <!-- Action Buttons Row -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <!-- Nút 1: Tải về máy tính -->
+                            <button id="btn-download-pc" onclick="downloadVideoLocal()" class="py-3 px-4 rounded-xl bg-brand-600/15 hover:bg-brand-600 text-brand-400 hover:text-white text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-download"></i>
+                                Tải về máy tính
+                            </button>
+                            <!-- Nút 2: Tải lên Drive -->
+                            <button id="btn-upload-drive" onclick="uploadVideoToDrive()" class="py-3 px-4 rounded-xl bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-white text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2">
+                                <i class="fa-brands fa-google-drive"></i>
+                                <span id="lbl-upload-drive">Tải lên Drive</span>
+                            </button>
+                            <!-- Nút 3: Cả hai (Tải về và Lên Drive) -->
+                            <button id="btn-both-actions" onclick="triggerBothActions()" class="py-3 px-4 rounded-xl bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-white text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-cloud-arrow-down"></i>
+                                Cả hai (Tải & Lên)
+                            </button>
+                        </div>
+
+                        <!-- Drive Link (Show if uploaded successfully) -->
+                        <div id="drive-link-container" class="hidden p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/20 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <i class="fa-brands fa-google-drive text-emerald-400 text-lg"></i>
+                                <div>
+                                    <span class="text-xs text-gray-400 block font-semibold">Tải lên Google Drive thành công!</span>
+                                    <span class="text-[10px] text-gray-500 block" id="drive-link-info">Bản sao lưu và tài nguyên đã được lưu trữ</span>
+                                </div>
+                            </div>
+                            <a id="btn-open-drive" href="#" target="_blank" class="py-1.5 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs transition-colors">
+                                Mở Drive Link
+                            </a>
+                        </div>
+                    </div>
                 </div>
 
             </div>
@@ -432,11 +466,6 @@
 
         // Khi load trang
         window.addEventListener("DOMContentLoaded", () => {
-            // Load key Gemini từ localStorage nếu có
-            const savedKey = localStorage.getItem("gemini_api_key");
-            if (savedKey) {
-                document.getElementById("gemini-key").value = savedKey;
-            }
 
             updateVoiceOptions();
             loadHistory();
@@ -480,21 +509,34 @@
         // --- API Calls ---
         async function checkDriveAuth() {
             try {
-                // Giả lập hoặc kiểm tra thực từ API token
-                const mockToggle = document.getElementById("mock-drive-toggle").checked;
+                const res = await fetch(`${API_URL}/api/google/status`);
+                const data = await res.json();
+                
                 const statusDiv = document.getElementById("drive-auth-status");
                 const modalStatus = document.getElementById("modal-auth-status");
+                const mockToggle = document.getElementById("mock-drive-toggle");
 
-                if (mockToggle) {
+                if (data.authenticated) {
                     statusDiv.className = "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass-panel border border-emerald-500/20 text-emerald-400";
-                    statusDiv.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>Google Drive Mocked';
+                    statusDiv.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>Google Drive Online';
                     modalStatus.className = "font-bold text-emerald-500";
-                    modalStatus.innerText = "Đã kết nối (Giả lập)";
+                    modalStatus.innerText = "Đã kết nối (Từ .env / token.json)";
+                    if (mockToggle) {
+                        mockToggle.checked = false; // Tự động tắt giả lập nếu có kết nối thật
+                    }
                 } else {
-                    statusDiv.className = "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass-panel border border-red-500/20 text-red-400";
-                    statusDiv.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span>Google Drive Offline';
-                    modalStatus.className = "font-bold text-red-500";
-                    modalStatus.innerText = "Chưa liên kết";
+                    const mockChecked = mockToggle ? mockToggle.checked : true;
+                    if (mockChecked) {
+                        statusDiv.className = "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass-panel border border-emerald-500/20 text-emerald-400";
+                        statusDiv.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>Google Drive Mocked';
+                        modalStatus.className = "font-bold text-emerald-500";
+                        modalStatus.innerText = "Đã kết nối (Giả lập)";
+                    } else {
+                        statusDiv.className = "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold glass-panel border border-red-500/20 text-red-400";
+                        statusDiv.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span>Google Drive Offline';
+                        modalStatus.className = "font-bold text-red-500";
+                        modalStatus.innerText = "Chưa liên kết";
+                    }
                 }
             } catch (err) {
                 console.error("Lỗi kiểm tra Auth:", err);
@@ -518,18 +560,12 @@
             const url = document.getElementById("video-url").value;
             const target_lang = document.getElementById("target-lang").value;
             const voice = document.getElementById("voice-select").value;
-            const gemini_key = document.getElementById("gemini-key").value;
-            
-            // Lưu key vào local storage
-            localStorage.setItem("gemini_api_key", gemini_key);
-
             const isReup = document.getElementById("reup-mode-toggle").checked;
             
             let payload = {
                 url,
                 target_lang,
                 voice,
-                gemini_key,
                 mode: isReup ? "reup" : "standard"
             };
 
@@ -569,10 +605,27 @@
             }
         }
 
+        let currentActiveJobId = null;
+
         // Theo dõi tiến trình Job
         function startMonitoringJob(jobId) {
+            currentActiveJobId = jobId;
+            
             if (activeJobInterval) {
                 clearInterval(activeJobInterval);
+            }
+
+            // Ẩn panel kết quả cũ khi bắt đầu theo dõi job mới
+            document.getElementById("job-result-panel").classList.add("hidden");
+            document.getElementById("drive-link-container").classList.add("hidden");
+            
+            // Reset trạng thái nút upload
+            const btn = document.getElementById("btn-upload-drive");
+            const lbl = document.getElementById("lbl-upload-drive");
+            if (btn && lbl) {
+                btn.disabled = false;
+                btn.className = "py-3 px-4 rounded-xl bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-white text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2";
+                lbl.innerText = "Tải lên Drive";
             }
 
             document.getElementById("active-job-panel").classList.remove("hidden");
@@ -640,6 +693,32 @@
                         // Đổi nút completed về xanh lá
                         const doneEl = document.getElementById("step-Done");
                         if (doneEl) doneEl.className = "p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                        
+                        // Hiển thị khung video preview kết quả
+                        const videoSource = document.getElementById("result-video-source");
+                        const videoPlayer = document.getElementById("result-video-player");
+                        if (videoSource && videoPlayer) {
+                            videoSource.src = `${API_URL}/outputs/job_${jobId}_finished.mp4`;
+                            videoPlayer.load();
+                            document.getElementById("job-result-panel").classList.remove("hidden");
+                        }
+
+                        // Nếu đã từng upload Drive thành công trước đó
+                        if (job.drive_link) {
+                            const driveContainer = document.getElementById("drive-link-container");
+                            const driveLinkBtn = document.getElementById("btn-open-drive");
+                            const btnUpload = document.getElementById("btn-upload-drive");
+                            const lblUpload = document.getElementById("lbl-upload-drive");
+                            
+                            if (driveContainer && driveLinkBtn) {
+                                driveContainer.classList.remove("hidden");
+                                driveLinkBtn.href = job.drive_link;
+                            }
+                            if (btnUpload && lblUpload) {
+                                btnUpload.className = "py-3 px-4 rounded-xl bg-emerald-600 text-white text-sm font-bold flex items-center justify-center gap-2";
+                                lblUpload.innerText = "Đã lên Drive";
+                            }
+                        }
                     } else if (job.status === "failed") {
                         clearInterval(activeJobInterval);
                         addErrorTerminalLog("Tác vụ xử lý thất bại: " + job.error_message);
@@ -793,6 +872,128 @@
             } catch (err) {
                 alert("Lỗi khi thử lại: " + err.message);
             }
+        }
+
+        // --- Các chức năng tải về / upload thủ công từ Dashboard ---
+        
+        async function downloadVideoLocal() {
+            if (!currentActiveJobId) {
+                alert("Không xác định được tác vụ hiện tại.");
+                return;
+            }
+            const videoUrl = `${API_URL}/outputs/job_${currentActiveJobId}_finished.mp4`;
+            const a = document.createElement("a");
+            a.href = videoUrl;
+            a.download = `HD_Media_Job_${currentActiveJobId}_finished.mp4`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        async function uploadVideoToDrive() {
+            if (!currentActiveJobId) {
+                alert("Không xác định được tác vụ hiện tại.");
+                return;
+            }
+            
+            const btn = document.getElementById("btn-upload-drive");
+            const lbl = document.getElementById("lbl-upload-drive");
+            
+            if (btn && lbl) {
+                btn.disabled = true;
+                btn.className = "py-3 px-4 rounded-xl bg-gray-700 text-gray-400 text-sm font-bold flex items-center justify-center gap-2 cursor-not-allowed";
+                lbl.innerText = "Đang tải lên Drive...";
+            }
+            
+            try {
+                const res = await fetch(`${API_URL}/api/google/upload/${currentActiveJobId}`, { method: "POST" });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Không thể khởi động tiến trình upload.");
+                }
+                
+                // Thêm dòng log ảo vào console
+                const terminal = document.getElementById("terminal-log");
+                if (terminal) {
+                    const logLine = document.createElement("div");
+                    logLine.className = "text-amber-400 font-bold mt-1";
+                    logLine.innerHTML = `<i class="fa-solid fa-hourglass-half"></i> Yêu cầu tải lên Drive đã được gửi. Đang xử lý ngầm...`;
+                    terminal.appendChild(logLine);
+                    terminal.scrollTop = terminal.scrollHeight;
+                }
+
+                // Bắt đầu theo dõi trạng thái upload
+                pollDriveUploadStatus(currentActiveJobId);
+            } catch (err) {
+                alert("Lỗi upload: " + err.message);
+                if (btn && lbl) {
+                    btn.disabled = false;
+                    btn.className = "py-3 px-4 rounded-xl bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-white text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2";
+                    lbl.innerText = "Tải lên Drive";
+                }
+            }
+        }
+
+        async function triggerBothActions() {
+            // 1. Tải về máy tính ngay lập tức
+            downloadVideoLocal();
+            
+            // 2. Chờ 1 giây rồi kích hoạt tải lên Drive
+            setTimeout(() => {
+                uploadVideoToDrive();
+            }, 1000);
+        }
+
+        function pollDriveUploadStatus(jobId) {
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/jobs/${jobId}`);
+                    if (!res.ok) return;
+                    const job = await res.json();
+                    
+                    const btn = document.getElementById("btn-upload-drive");
+                    const lbl = document.getElementById("lbl-upload-drive");
+                    const driveContainer = document.getElementById("drive-link-container");
+                    const driveLinkBtn = document.getElementById("btn-open-drive");
+                    
+                    if (job.drive_upload_status === "completed") {
+                        clearInterval(interval);
+                        
+                        if (btn && lbl) {
+                            btn.className = "py-3 px-4 rounded-xl bg-emerald-600 text-white text-sm font-bold flex items-center justify-center gap-2";
+                            lbl.innerText = "Đã lên Drive";
+                        }
+                        if (driveContainer && driveLinkBtn) {
+                            driveContainer.classList.remove("hidden");
+                            driveLinkBtn.href = job.drive_link;
+                        }
+                        
+                        // Thêm log thành công vào console
+                        const terminal = document.getElementById("terminal-log");
+                        if (terminal) {
+                            const logLine = document.createElement("div");
+                            logLine.className = "text-emerald-300 font-bold mt-1";
+                            logLine.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Hoàn tất tải lên Google Drive!`;
+                            terminal.appendChild(logLine);
+                            terminal.scrollTop = terminal.scrollHeight;
+                        }
+                        
+                        loadHistory();
+                    } else if (job.drive_upload_status === "failed") {
+                        clearInterval(interval);
+                        
+                        if (btn && lbl) {
+                            btn.disabled = false;
+                            btn.className = "py-3 px-4 rounded-xl bg-rose-600 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-rose-500";
+                            lbl.innerText = "Thử lại tải lên";
+                        }
+                        alert("Lỗi tải lên Google Drive. Vui lòng kiểm tra tab nhật ký log.");
+                    }
+                    
+                } catch (err) {
+                    console.error("Lỗi khi kiểm tra trạng thái upload:", err);
+                }
+            }, 2000);
         }
     </script>
 </body>

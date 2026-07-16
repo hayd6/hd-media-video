@@ -45,3 +45,6 @@ if not os.path.exists(FFMPEG_PATH):
 
 # Cấu hình log
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Tên model Gemini mặc định để dịch thuật và nhận dạng giọng nói
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")

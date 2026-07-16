@@ -230,29 +230,9 @@ def execute_pipeline(job_id: int):
         )
         add_log(job_id, "SEO & Upload", "Đã lưu nội dung SEO thành công.")
         
-        # 3. Tải lên Google Drive
-        add_log(job_id, "SEO & Upload", "Đang tải tệp video và các tài nguyên liên quan lên Google Drive...")
-        assets = {
-            "video": output_video_path,
-            "subtitle_ass": translated_ass_path,
-            "subtitle_srt": translated_srt_path,
-            "audio": mixed_audio_path,
-            "thumbnail": thumbnail_path,
-            "seo": seo_txt_path
-        }
-        
-        drive_res = drive_service.upload_job_assets(job_id, assets)
-        database.update_job(
-            job_id,
-            drive_link=drive_res.get("drive_link"),
-            drive_file_id=drive_res.get("drive_file_id"),
-            drive_upload_status=drive_res.get("drive_upload_status")
-        )
-        
-        if drive_res.get("drive_upload_status") == "completed":
-            add_log(job_id, "SEO & Upload", f"Tải lên Google Drive thành công! Link: {drive_res.get('drive_link')}")
-        else:
-            add_log(job_id, "SEO & Upload", f"Tải lên Google Drive bỏ qua hoặc thất bại: {drive_res.get('error_message')}")
+        # 3. Tải lên Google Drive thủ công (Người dùng sẽ bấm nút chọn tải lên từ giao diện)
+        database.update_job(job_id, drive_upload_status="none")
+        add_log(job_id, "SEO & Upload", "Hoàn tất sinh Thumbnail và SEO. Video đã sẵn sàng để xem/tải về trên Dashboard.")
 
         # --- BƯỚC 8: HOÀN THÀNH ---
         finished_at = datetime.utcnow()

@@ -8,24 +8,81 @@ logger = logging.getLogger("drive_service")
 # Đường dẫn lưu trữ Token OAuth2 của người dùng
 TOKEN_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "token.json")
 
+# Biến toàn cục lưu trữ access_token tạm thời trong bộ nhớ để tránh gọi refresh liên tục
+_access_token = None
+
 def is_authenticated() -> bool:
-    """Kiểm tra xem người dùng đã đăng nhập Google Drive (có file token.json) chưa."""
-    return os.path.exists(TOKEN_FILE)
+    """Kiểm tra xem người dùng đã cấu hình Google Drive (qua .env hoặc token.json) chưa."""
+    return (
+        "GOOGLE_DRIVE_ACCESS_TOKEN" in os.environ or
+        "GOOGLE_DRIVE_REFRESH_TOKEN" in os.environ or
+        os.path.exists(TOKEN_FILE)
+    )
 
 def get_access_token() -> str:
     """
-    Đọc access token từ token.json.
-    Nếu hết hạn, tự động làm mới bằng refresh token (nếu được cấu hình).
+    Đọc access token. Ưu tiên đọc cấu hình từ .env trước, 
+    nếu có refresh_token sẽ tự động làm mới trong bộ nhớ.
+    Dự phòng đọc từ tệp token.json ở thư mục gốc.
     """
-    if not os.path.exists(TOKEN_FILE):
-        raise ValueError("Chưa đăng nhập Google Drive. Vui lòng đăng nhập qua API.")
+    global _access_token
+    
+    # 1. Đọc từ biến môi trường (.env)
+    env_access_token = os.environ.get("GOOGLE_DRIVE_ACCESS_TOKEN")
+    env_refresh_token = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN")
+    env_client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID")
+    env_client_secret = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET")
+    
+    if env_refresh_token and env_client_id and env_client_secret:
+        # Nếu chưa có token trong bộ nhớ tạm, tiến hành refresh
+        if not _access_token:
+            try:
+                url = "https://oauth2.googleapis.com/token"
+                payload = {
+                    "client_id": env_client_id,
+                    "client_secret": env_client_secret,
+                    "refresh_token": env_refresh_token,
+                    "grant_type": "refresh_token"
+                }
+                res = requests.post(url, data=payload)
+                if res.status_code == 200:
+                    _access_token = res.json()["access_token"]
+                    logger.info("Đã tự động nạp và làm mới Google Drive Access Token từ .env thành công.")
+            except Exception as e:
+                logger.warning(f"Lỗi khi refresh Google Drive token từ .env: {e}")
+        if _access_token:
+            return _access_token
+            
+    if env_access_token:
+        return env_access_token
         
-    with open(TOKEN_FILE, "r") as f:
-        token_data = json.load(f)
-        
-    # Đơn giản hóa: trong thực tế sẽ kiểm tra thời gian hết hạn và gọi API refresh token
-    # https://oauth2.googleapis.com/token
-    return token_data.get("access_token")
+    # 2. Dự phòng đọc từ tệp token.json cũ
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r", encoding="utf-8") as f:
+            token_data = json.load(f)
+            
+        if "refresh_token" in token_data and "client_id" in token_data and "client_secret" in token_data:
+            try:
+                url = "https://oauth2.googleapis.com/token"
+                payload = {
+                    "client_id": token_data["client_id"],
+                    "client_secret": token_data["client_secret"],
+                    "refresh_token": token_data["refresh_token"],
+                    "grant_type": "refresh_token"
+                }
+                res = requests.post(url, data=payload)
+                if res.status_code == 200:
+                    new_access_token = res.json()["access_token"]
+                    token_data["access_token"] = new_access_token
+                    with open(TOKEN_FILE, "w", encoding="utf-8") as f_out:
+                        json.dump(token_data, f_out, indent=2)
+                    return new_access_token
+            except Exception as e:
+                logger.warning(f"Không thể tự động refresh Google Drive token: {e}")
+                
+        return token_data.get("access_token")
+
+    raise ValueError("Chưa cấu hình Google Drive. Vui lòng cấu hình các khóa GOOGLE_DRIVE_* trong tệp .env.")
 
 def create_folder(folder_name: str, parent_id: str = None, access_token: str = None) -> str:
     """Tạo một thư mục mới trên Google Drive và trả về Folder ID."""
