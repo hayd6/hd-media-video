@@ -172,13 +172,20 @@
                         </div>
 
                         
-                            <!-- Translation Model -->
-                            <div class="mt-6">
-                                <label class="block text-sm font-semibold text-gray-400 mb-2">Mô hình Dịch thuật (AI Model)</label>
-                                <select id="translation-model" class="block w-full px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
-                                    <option value="gemini" selected>Gemini API (Google - Tốc độ cao)</option>
-                                    <option value="qwen-local">Qwen Local (Ollama - Chạy trên máy bạn)</option>
-                                </select>
+                            <!-- AI Provider and Model -->
+                            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-400 mb-2">AI Provider</label>
+                                    <select id="ai-provider" onchange="updateModelOptions()" class="block w-full px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                                        <!-- Nạp động -->
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-400 mb-2">Mô hình Dịch thuật (Model)</label>
+                                    <select id="ai-model" class="block w-full px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                                        <!-- Nạp động -->
+                                    </select>
+                                </div>
                             </div>
 
                         </div>
@@ -608,8 +615,59 @@
             ]
         };
 
+        async function loadProviders() {
+            try {
+                const res = await fetch(`${API_URL}/api/providers`);
+                if (res.ok) {
+                    const providers = await res.json();
+                    const select = document.getElementById("ai-provider");
+                    select.innerHTML = "";
+                    providers.forEach(p => {
+                        const opt = document.createElement("option");
+                        opt.value = p;
+                        opt.innerText = p === "ollama" ? "Ollama (Chạy trên máy bạn)" : "Gemini API (Tốc độ cao)";
+                        // Mặc định chọn Gemini nếu có để dễ test
+                        if (p === "gemini") opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                    updateModelOptions();
+                }
+            } catch (e) {
+                console.error("Lỗi load providers:", e);
+            }
+        }
+
+        async function updateModelOptions() {
+            const provider = document.getElementById("ai-provider").value;
+            if (!provider) return;
+            try {
+                const res = await fetch(`${API_URL}/api/models?provider=${provider}`);
+                if (res.ok) {
+                    const models = await res.json();
+                    const select = document.getElementById("ai-model");
+                    select.innerHTML = "";
+                    if (models.length === 0) {
+                        const opt = document.createElement("option");
+                        opt.value = "";
+                        opt.innerText = provider === "ollama" ? "Ollama chưa chạy/Không có model" : "Không có model";
+                        select.appendChild(opt);
+                    } else {
+                        models.forEach(m => {
+                            const opt = document.createElement("option");
+                            opt.value = m;
+                            opt.innerText = m;
+                            select.appendChild(opt);
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error("Lỗi load models:", e);
+            }
+        }
+
         // Khi load trang
         window.addEventListener("DOMContentLoaded", () => {
+            loadProviders();
             // Cập nhật nghe thử & video preview trực tiếp khi gõ URL (Hỗ trợ YouTube, Bilibili, và HTML5 Video)
             document.getElementById("video-url").addEventListener("input", function() {
                 const url = this.value.trim();
@@ -807,7 +865,8 @@
             const url = document.getElementById("video-url").value;
             const target_lang = document.getElementById("target-lang").value;
             const voice = document.getElementById("voice-select").value;
-            const translation_model = document.getElementById("translation-model").value;
+            const ai_provider = document.getElementById("ai-provider").value;
+            const ai_model = document.getElementById("ai-model").value;
             const isReup = document.getElementById("reup-mode-toggle").checked;
             
             const isSubCustom = document.getElementById("sub-custom-toggle").checked;
@@ -816,7 +875,8 @@
                 url,
                 target_lang,
                 voice,
-                translation_model,
+                ai_provider,
+                ai_model,
                 mode: isReup ? "reup" : "standard"
             };
 

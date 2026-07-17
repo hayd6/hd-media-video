@@ -46,7 +46,12 @@ if not os.path.exists(FFMPEG_PATH):
 # Cấu hình log
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-# Tên model Gemini mặc định để dịch thuật và nhận dạng giọng nói
+# Cấu hình AI Provider
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "ollama").lower()
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:7b")
+
+# Tên model Gemini
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 # Danh sách giọng nói lồng tiếng chuẩn (Không biến đổi pitch/Hz)

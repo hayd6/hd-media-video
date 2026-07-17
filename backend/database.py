@@ -85,7 +85,9 @@ def init_db():
         "sub_blur_bar": "INTEGER DEFAULT 1",
         "sub_blur_bar_y": "INTEGER DEFAULT NULL",
         "sub_blur_bar_h": "INTEGER DEFAULT 80",
-        "translation_model": "TEXT DEFAULT 'gemini'"
+        "translation_model": "TEXT DEFAULT 'gemini'",
+        "ai_provider": "TEXT",
+        "ai_model": "TEXT"
     }
     for col, definition in new_columns.items():
         try:
@@ -140,7 +142,7 @@ def create_job(url: str, target_lang: str, voice: str, mode: str, **kwargs) -> D
             "speed", "brightness", "contrast", "saturation", "sharpen", "denoise",
             "mirror", "crop", "resize", "watermark_opacity", "watermark_size",
             "watermark_position", "bg_music_volume", "watermark_path", "intro_path", "outro_path",
-            "gemini_key", "translation_model"
+            "gemini_key", "translation_model", "ai_provider", "ai_model"
         ]:
             fields.append(k)
             # Chuyển đổi boolean thành integer cho SQLite

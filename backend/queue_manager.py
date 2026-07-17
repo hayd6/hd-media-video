@@ -10,7 +10,9 @@ import pysubs2
 import database
 import downloader
 import gemini_service
-import qwen_service
+import ai_provider
+import transcription_service
+import seo_service
 import tts_service
 import video_service
 import drive_service
@@ -110,24 +112,22 @@ def execute_pipeline(job_id: int):
     add_log(job_id, "Init", "Bắt đầu xử lý Job dịch video.")
     
     try:
-        # Lấy API Key từ cấu hình Job hoặc biến môi trường (hỗ trợ nhiều key xoay vòng)
+        # Lấy cấu hình Provider và Model từ Job hoặc cấu hình mặc định
+        job_provider = job.get("ai_provider") or ai_provider.CURRENT_PROVIDER
+        job_model = job.get("ai_model") or (ai_provider.CURRENT_OLLAMA_MODEL if job_provider == "ollama" else ai_provider.CURRENT_GEMINI_MODEL)
+        
         gemini_key = job.get("gemini_key")
         if not gemini_key:
-            # Thử GEMINI_API_KEY_1, GEMINI_API_KEY_2, ... trước
             for i in range(1, 10):
                 k = os.environ.get(f"GEMINI_API_KEY_{i}")
                 if k:
                     gemini_key = k.strip()
                     break
-            # Fallback về GEMINI_API_KEY (key đơn cũ)
             if not gemini_key:
                 gemini_key = os.environ.get("GEMINI_API_KEY")
 
-        if not gemini_key:
-            raise ValueError(
-                "Không tìm thấy Gemini API Key. Vui lòng thiết lập biến môi trường "
-                "GEMINI_API_KEY_1 (hoặc GEMINI_API_KEY) trong tệp .env."
-            )
+        if job_provider == "gemini" and not gemini_key:
+            logger.warning("Không tìm thấy Gemini API Key. Vẫn tiếp tục nhưng có thể lỗi ở bước dịch nếu hệ thống chưa cấu hình fallback.")
 
         # --- BƯỚC 2: TẢI VIDEO & TRÍCH XUẤT ÂM THANH (PHASE 2) ---
         database.update_job(job_id, current_step="Download", progress=0)
@@ -172,9 +172,9 @@ def execute_pipeline(job_id: int):
 
         # --- BƯỚC 3: NHẬN DIỆN GIỌNG NÓI (PHASE 3) ---
         database.update_job(job_id, current_step="Speech Recognition", progress=25)
-        add_log(job_id, "Speech Recognition", "Đang gọi Gemini API để nhận dạng giọng nói...")
+        add_log(job_id, "Speech Recognition", "Đang gọi Faster-Whisper để nhận dạng giọng nói...")
         
-        original_segments = gemini_service.transcribe_audio(audio_path, gemini_key)
+        original_segments = transcription_service.transcribe_audio(audio_path, gemini_key)
         
         # Lưu file transcript JSON gốc
         transcript_json_path = os.path.join(DOWNLOAD_DIR, f"job_{job_id}_transcript.json")
@@ -189,20 +189,15 @@ def execute_pipeline(job_id: int):
 
         # --- BƯỚC 4: DỊCH THUẬT AI (PHASE 4) ---
         database.update_job(job_id, current_step="Translate", progress=45)
-        translation_model = job.get("translation_model", "gemini")
-        if translation_model == "qwen-local":
-            add_log(job_id, "Translate", f"Đang dịch phụ đề sang tiếng {job['target_lang']} bằng Qwen Local (Ollama)...")
-            translated_segments = qwen_service.translate_segments(
-                original_segments,
-                job["target_lang"]
-            )
-        else:
-            add_log(job_id, "Translate", f"Đang dịch phụ đề sang tiếng {job['target_lang']} bằng Gemini API...")
-            translated_segments = gemini_service.translate_segments(
-                original_segments, 
-                job["target_lang"], 
-                gemini_key
-            )
+        
+        add_log(job_id, "Translate", f"Đang dịch phụ đề sang tiếng {job['target_lang']} bằng {job_provider} ({job_model})...")
+        translated_segments = ai_provider.translate(
+            segments=original_segments,
+            target_lang=job["target_lang"],
+            provider=job_provider,
+            model=job_model,
+            api_key=gemini_key
+        )
         
         translated_srt_path = os.path.join(OUTPUT_DIR, f"job_{job_id}_translated.srt")
         translated_ass_path = os.path.join(OUTPUT_DIR, f"job_{job_id}_translated.ass")
@@ -285,10 +280,16 @@ def execute_pipeline(job_id: int):
         database.update_job(job_id, thumbnail_path=thumbnail_path)
         add_log(job_id, "SEO & Upload", "Đã xuất hình thu nhỏ (Thumbnail) thành công.")
         
-        # 2. Tạo nội dung SEO bằng Gemini API
-        add_log(job_id, "SEO & Upload", "Đang tạo tiêu đề và mô tả video tối ưu SEO...")
+        # 2. Tạo nội dung SEO bằng AI Provider
+        add_log(job_id, "SEO & Upload", f"Đang tạo tiêu đề và mô tả video tối ưu SEO bằng {job_provider}...")
         transcript_text = " ".join([seg["text"] for seg in translated_segments])
-        seo_data = gemini_service.generate_seo(transcript_text, job["target_lang"], gemini_key)
+        seo_data = seo_service.generate_seo(
+            transcript_text=transcript_text,
+            target_lang=job["target_lang"],
+            provider=job_provider,
+            model=job_model,
+            api_key=gemini_key
+        )
         
         # Lưu nội dung SEO ra file txt
         seo_txt_path = os.path.join(OUTPUT_DIR, f"job_{job_id}_seo.txt")

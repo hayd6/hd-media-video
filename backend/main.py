@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 import database
 import drive_service
+import ai_provider
 from queue_manager import job_queue
 from config import OUTPUT_DIR, VOICES_CONFIG
 
@@ -20,6 +21,10 @@ from config import OUTPUT_DIR, VOICES_CONFIG
 async def lifespan(app: FastAPI):
     # Khởi chạy: Khởi tạo database SQLite và chạy background queue thread
     database.init_db()
+    
+    # Kiểm tra trạng thái Ollama lúc khởi động
+    ai_provider.check_ollama_status()
+    
     job_queue.start()
     yield
     # Dừng: Tắt background queue thread
@@ -57,6 +62,8 @@ class JobCreate(BaseModel):
     url: str
     target_lang: Optional[str] = "Vietnamese"
     translation_model: Optional[str] = "gemini"
+    ai_provider: Optional[str] = "ollama"
+    ai_model: Optional[str] = "qwen3:7b"
     voice: Optional[str] = "vi-VN-HoaiMyNeural"
     mode: Optional[str] = "standard"
     
@@ -107,6 +114,11 @@ class JobResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class AISettingsUpdate(BaseModel):
+    provider: Optional[str] = None
+    ollama_model: Optional[str] = None
+    gemini_model: Optional[str] = None
 
 # --- API Endpoints: Jobs & History ---
 
@@ -169,6 +181,40 @@ def get_job_logs(job_id: int):
     
     return database.get_job_logs(job_id)
 
+
+# --- API Endpoints: AI Provider Manager ---
+
+@app.get("/api/providers")
+def get_providers():
+    return ai_provider.get_supported_providers()
+
+@app.get("/api/models")
+def get_models_list(provider: Optional[str] = None):
+    p = provider or ai_provider.CURRENT_PROVIDER
+    return ai_provider.get_models(p)
+
+@app.get("/api/provider/status")
+def get_provider_status():
+    st = ai_provider.get_status()
+    return {
+        "provider": st["provider"],
+        "ollama_status": st["ollama_status"],
+        "current_ollama_model": st["current_ollama_model"],
+        "current_gemini_model": st["current_gemini_model"]
+    }
+
+@app.get("/api/settings/ai")
+def get_ai_settings():
+    return ai_provider.get_status()
+
+@app.post("/api/settings/ai")
+def update_ai_settings(payload: AISettingsUpdate):
+    ai_provider.update_settings(
+        provider=payload.provider,
+        ollama_model=payload.ollama_model,
+        gemini_model=payload.gemini_model
+    )
+    return {"message": "Cập nhật cấu hình AI thành công.", "current": ai_provider.get_status()}
 
 # --- API Endpoints: Google Drive (Phục vụ các Phase sau) ---
 

@@ -382,16 +382,16 @@ def transcribe_audio(audio_path: str, api_key: str) -> list:
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         raise Exception(f"Lỗi phân tích phản hồi từ Gemini: {e}. Raw: {response.text}")
 
-def translate_segments(segments: list, target_lang: str, api_key: str) -> list:
+def translate_segments(segments: list, target_lang: str, api_key: str, model_name: str) -> list:
     """
-    Dịch danh sách các phân đoạn hội thoại sang ngôn ngữ đích sử dụng Gemini Flash.
+    Dịch danh sách các phân đoạn hội thoại sang ngôn ngữ đích sử dụng Gemini API.
     Giữ nguyên các mốc thời gian start/end.
     """
     if not segments:
         return []
 
     def build_url(key):
-        return f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={key}"
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={key}"
 
     prompt = (
         f"Hãy đóng vai trò là một biên dịch viên phụ đề chuyên nghiệp. "
@@ -443,12 +443,12 @@ def translate_segments(segments: list, target_lang: str, api_key: str) -> list:
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         raise Exception(f"Lỗi phân tích phản hồi dịch từ Gemini: {e}. Raw: {response.text}")
 
-def generate_seo(transcript_text: str, target_lang: str, api_key: str) -> dict:
+def generate_seo(transcript_text: str, target_lang: str, api_key: str, model_name: str) -> dict:
     """
     Sinh nội dung SEO (Tiêu đề, mô tả tóm tắt, thẻ hashtags) dựa vào nội dung hội thoại của video.
     """
     def build_url(key):
-        return f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={key}"
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={key}"
 
     prompt = (
         f"Dựa vào nội dung cuộc hội thoại trong video sau đây, hãy viết tiêu đề SEO cuốn hút, "
