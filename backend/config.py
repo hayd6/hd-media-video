@@ -47,4 +47,44 @@ if not os.path.exists(FFMPEG_PATH):
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 # Tên model Gemini mặc định để dịch thuật và nhận dạng giọng nói
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+
+# Danh sách giọng nói lồng tiếng chuẩn (Không biến đổi pitch/Hz)
+VOICES_CONFIG = {
+    "vi-VN-HoaiMyNeural": {
+        "name": "Hoài My (Nữ)",
+        "voice": "vi-VN-HoaiMyNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz"
+    },
+    "vi-VN-NamMinhNeural": {
+        "name": "Nam Minh (Nam)",
+        "voice": "vi-VN-NamMinhNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz"
+    },
+    "en-US-AriaNeural": {
+        "name": "Aria (Nữ)",
+        "voice": "en-US-AriaNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz"
+    },
+    "en-US-JennyNeural": {
+        "name": "Jenny (Nữ)",
+        "voice": "en-US-JennyNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz"
+    },
+    "en-US-GuyNeural": {
+        "name": "Guy (Nam)",
+        "voice": "en-US-GuyNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz"
+    },
+    "en-US-ChristopherNeural": {
+        "name": "Christopher (Nam)",
+        "voice": "en-US-ChristopherNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz"
+    }
+}

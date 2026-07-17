@@ -1,10 +1,12 @@
 import os
+import io
+import edge_tts
 from typing import List, Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -12,7 +14,7 @@ from pydantic import BaseModel
 import database
 import drive_service
 from queue_manager import job_queue
-from config import OUTPUT_DIR
+from config import OUTPUT_DIR, VOICES_CONFIG
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,6 +56,7 @@ def read_root():
 class JobCreate(BaseModel):
     url: str
     target_lang: Optional[str] = "Vietnamese"
+    translation_model: Optional[str] = "gemini"
     voice: Optional[str] = "vi-VN-HoaiMyNeural"
     mode: Optional[str] = "standard"
     
@@ -71,6 +74,21 @@ class JobCreate(BaseModel):
     watermark_size: Optional[float] = 0.15
     watermark_position: Optional[str] = "bottom_right"
     bg_music_volume: Optional[float] = 0.1
+
+    # Tùy chọn Chỉnh sửa Phụ đề & Che Sub trung (làm mờ)
+    sub_font: Optional[str] = "Arial"
+    sub_font_size: Optional[float] = 24.0
+    sub_bold: Optional[bool] = True
+    sub_italic: Optional[bool] = True
+    sub_uppercase: Optional[bool] = True
+    sub_color: Optional[str] = "#FFFFFF"
+    sub_outline_color: Optional[str] = "#000000"
+    sub_outline_width: Optional[float] = 3.0
+    sub_alignment: Optional[int] = 2
+    sub_margin_v: Optional[int] = 30
+    sub_blur_bar: Optional[bool] = True
+    sub_blur_bar_y: Optional[int] = None
+    sub_blur_bar_h: Optional[int] = 80
 
 class JobResponse(BaseModel):
     id: int
@@ -161,6 +179,50 @@ def google_login():
 @app.get("/api/google/status")
 def google_status():
     return {"authenticated": drive_service.is_authenticated()}
+
+@app.get("/api/voices")
+def get_voices():
+    # Trả về danh sách giọng đọc động từ VOICES_CONFIG cấu hình trong config.py
+    vi_voices = [{"value": key, "label": val["name"]} for key, val in VOICES_CONFIG.items()]
+    
+    # Giữ nguyên 2 giọng tiếng Anh cơ bản
+    en_voices = [
+        {"value": "en-US-JennyNeural", "label": "Jenny (Female - English)"},
+        {"value": "en-US-GuyNeural", "label": "Guy (Male - English)"}
+    ]
+    
+    return {
+        "Vietnamese": vi_voices,
+        "English": en_voices
+    }
+
+@app.get("/api/voice/preview")
+async def voice_preview(voice_id: str):
+    text = "Xin chào! Đây là giọng nói thử nghiệm của tôi."
+    
+    voice_name = "vi-VN-HoaiMyNeural"
+    rate = "+0%"
+    pitch = "+0Hz"
+    
+    if voice_id in VOICES_CONFIG:
+        cfg = VOICES_CONFIG[voice_id]
+        voice_name = cfg["voice"]
+        rate = cfg["rate"]
+        pitch = cfg["pitch"]
+    else:
+        # Fallback nếu là id giọng đọc gốc
+        voice_name = voice_id
+        
+    try:
+        communicate = edge_tts.Communicate(text, voice_name, rate=rate, pitch=pitch)
+        audio_stream = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_stream.write(chunk["data"])
+        audio_stream.seek(0)
+        return StreamingResponse(audio_stream, media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Không thể sinh âm thanh nghe thử: {str(e)}")
 
 def background_upload_task(job_id: int):
     # Cập nhật trạng thái bắt đầu upload

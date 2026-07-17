@@ -70,6 +70,29 @@ def init_db():
     )
     """)
     
+    # Tự động thực hiện migrations để thêm các cột chỉnh sửa phụ đề mới nếu chưa có
+    new_columns = {
+        "sub_font": "TEXT DEFAULT 'Arial'",
+        "sub_font_size": "REAL DEFAULT 24.0",
+        "sub_bold": "INTEGER DEFAULT 1",
+        "sub_italic": "INTEGER DEFAULT 1",
+        "sub_uppercase": "INTEGER DEFAULT 1",
+        "sub_color": "TEXT DEFAULT '#FFFFFF'",
+        "sub_outline_color": "TEXT DEFAULT '#000000'",
+        "sub_outline_width": "REAL DEFAULT 3.0",
+        "sub_alignment": "INTEGER DEFAULT 2",
+        "sub_margin_v": "INTEGER DEFAULT 30",
+        "sub_blur_bar": "INTEGER DEFAULT 1",
+        "sub_blur_bar_y": "INTEGER DEFAULT NULL",
+        "sub_blur_bar_h": "INTEGER DEFAULT 80",
+        "translation_model": "TEXT DEFAULT 'gemini'"
+    }
+    for col, definition in new_columns.items():
+        try:
+            cursor.execute(f"ALTER TABLE jobs ADD COLUMN {col} {definition}")
+        except Exception:
+            pass
+
     # Tạo bảng job_logs
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS job_logs (
@@ -93,12 +116,11 @@ def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     for time_key in ["created_at", "finished_at"]:
         if d.get(time_key):
             try:
-                # Trả về string isoformat phù hợp để API serialize dễ dàng
                 pass
             except Exception:
                 pass
     # Chuyển đổi boolean
-    for bool_key in ["sharpen", "denoise"]:
+    for bool_key in ["sharpen", "denoise", "sub_bold", "sub_italic", "sub_uppercase", "sub_blur_bar"]:
         if bool_key in d:
             d[bool_key] = bool(d[bool_key])
     return d
@@ -118,7 +140,7 @@ def create_job(url: str, target_lang: str, voice: str, mode: str, **kwargs) -> D
             "speed", "brightness", "contrast", "saturation", "sharpen", "denoise",
             "mirror", "crop", "resize", "watermark_opacity", "watermark_size",
             "watermark_position", "bg_music_volume", "watermark_path", "intro_path", "outro_path",
-            "gemini_key"
+            "gemini_key", "translation_model"
         ]:
             fields.append(k)
             # Chuyển đổi boolean thành integer cho SQLite

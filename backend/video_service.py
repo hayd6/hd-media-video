@@ -88,14 +88,6 @@ def render_video(video_path: str, audio_path: str, subtitle_path: str, output_pa
         elif resize == "4k":
             v_filters.append("scale=-2:2160")
 
-    # --- Burn Phụ đề ASS ---
-    if subtitle_path and os.path.exists(subtitle_path):
-        escaped_sub_path = escape_ffmpeg_path(subtitle_path)
-        v_filters.append(f"subtitles={escaped_sub_path}")
-        
-    # Tạo chuỗi lọc video
-    v_filter_str = ",".join(v_filters) if v_filters else "copy"
-
     # 2. Xử lý âm thanh (Audio Filters & Concat)
     # Nếu thay đổi tốc độ ở Reup Mode, ta phải tăng/giảm tốc độ âm thanh tương ứng
     a_filters = []
@@ -138,19 +130,63 @@ def render_video(video_path: str, audio_path: str, subtitle_path: str, output_pa
     if has_watermark:
         command.extend(["-i", watermark_path])
 
-    # Xây dựng Filter Complex cho Watermark + Phụ đề + Video Filters cùng lúc
+    # 2. Xây dựng Filter Complex cho Watermark + Phụ đề + Làm mờ nền + Video Filters cùng lúc
     filter_complex = []
     
-    # Nếu có Watermark, ta phải overlay lên luồng video trước, sau đó mới áp dụng các v_filters
+    # Khởi tạo luồng video hiện tại
+    curr_v = "0:v"
+    
+    # --- Áp dụng Reup Filters nếu ở chế độ reup ---
+    if mode == "reup" and v_filters:
+        v_filter_str = ",".join(v_filters)
+        filter_complex.append(f"[{curr_v}]{v_filter_str}[v_reup]")
+        curr_v = "v_reup"
+        
+    # --- Áp dụng Blur Bar (Che sub Trung/Sub gốc) nếu được bật ---
+    sub_blur_bar = job.get("sub_blur_bar", True)
+    if sub_blur_bar:
+        blur_bar_h = job.get("sub_blur_bar_h", 80)
+        sub_margin_v = job.get("sub_margin_v", 30)
+        sub_alignment = job.get("sub_alignment", 2)
+        
+        sub_blur_bar_y = job.get("sub_blur_bar_y")
+        if sub_blur_bar_y is not None:
+            y_crop_expr = str(sub_blur_bar_y)
+            y_overlay_expr = str(sub_blur_bar_y)
+        else:
+            if sub_alignment == 8: # Top
+                # Tránh crop âm, sử dụng max(0, margin_v - blur_bar_h/2)
+                y_crop_expr = f"max(0\\,{sub_margin_v}-{blur_bar_h}/2)"
+                y_overlay_expr = f"max(0\\,{sub_margin_v}-{blur_bar_h}/2)"
+            elif sub_alignment == 5: # Middle
+                y_crop_expr = f"ih/2-{blur_bar_h}/2"
+                y_overlay_expr = f"main_h/2-{blur_bar_h}/2"
+            else: # Bottom (2)
+                # y = ih - margin_v - blur_bar_h/2 (cho crop) và main_h - margin_v - blur_bar_h/2 (cho overlay)
+                y_crop_expr = f"ih-{sub_margin_v}-{blur_bar_h}/2"
+                y_overlay_expr = f"main_h-{sub_margin_v}-{blur_bar_h}/2"
+                
+        # Thực hiện split luồng, crop vùng cần mờ, làm mờ, rồi overlay đè lại
+        filter_complex.append(f"[{curr_v}]split=2[v_orig][v_to_blur]")
+        filter_complex.append(f"[v_to_blur]crop=w=iw:h={blur_bar_h}:x=0:y={y_crop_expr}[v_cropped]")
+        filter_complex.append(f"[v_cropped]boxblur=20:5[v_blurred]")
+        filter_complex.append(f"[v_orig][v_blurred]overlay=x=0:y={y_overlay_expr}[v_blur_applied]")
+        curr_v = "v_blur_applied"
+        
+    # --- Chèn phụ đề ASS ---
+    if subtitle_path and os.path.exists(subtitle_path):
+        escaped_sub_path = escape_ffmpeg_path(subtitle_path)
+        filter_complex.append(f"[{curr_v}]subtitles={escaped_sub_path}[v_subbed]")
+        curr_v = "v_subbed"
+        
+    # --- Chèn Watermark ---
     if has_watermark:
         opacity = job.get("watermark_opacity", 0.5)
         size = job.get("watermark_size", 0.15)
         pos = job.get("watermark_position", "bottom_right")
         
-        # 1. Scale logo tương đối (ví dụ chiều rộng logo = 15% chiều rộng video)
-        # 2. Format yuva420p và đổi opacity alpha
         filter_complex.append(
-            f"[{watermark_input_idx}:v]scale=iw*0.5:-1,format=yuva420p,colorchannelmixer=aa={opacity}[wm]"
+            f"[{watermark_input_idx}:v]scale=iw*0.5:-1,format=pix_fmts=yuva420p,colorchannelmixer=aa={opacity}[wm]"
         )
         
         # Xác định vị trí overlay
@@ -163,21 +199,11 @@ def render_video(video_path: str, audio_path: str, subtitle_path: str, output_pa
         else: # bottom_right
             overlay_expr = "x=main_w-overlay_w-15:y=main_h-overlay_h-15"
             
-        filter_complex.append(f"[0:v][wm]overlay={overlay_expr}[v_wm]")
+        filter_complex.append(f"[{curr_v}][wm]overlay={overlay_expr}[v_wm_applied]")
+        curr_v = "v_wm_applied"
         
-        # Áp dụng v_filters tiếp theo lên luồng video đã chèn logo
-        if v_filter_str != "copy":
-            filter_complex.append(f"[v_wm]{v_filter_str}[v_out]")
-            video_map = "[v_out]"
-        else:
-            video_map = "[v_wm]"
-    else:
-        # Nếu không có watermark
-        if v_filter_str != "copy":
-            filter_complex.append(f"[0:v]{v_filter_str}[v_out]")
-            video_map = "[v_out]"
-        else:
-            video_map = "0:v"
+    # Xác định map video đầu ra
+    video_map = f"[{curr_v}]" if curr_v != "0:v" else "0:v"
 
     # Lọc âm thanh (atempo nếu đổi tốc độ)
     if a_filter_str != "copy":

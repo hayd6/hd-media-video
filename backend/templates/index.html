@@ -99,22 +99,17 @@
 
     <!-- Main Workspace -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <form id="job-form" onsubmit="submitJob(event)" class="mb-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             
-            <!-- Left 2 Columns: Input Form and Active Monitor -->
-            <div class="lg:col-span-2 space-y-8">
-                
-                <!-- Main Control Panel -->
-                <div class="glass-panel rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-                    <!-- Background accent light -->
-                    <div class="absolute -right-24 -top-24 w-48 h-48 bg-brand-600/10 rounded-full blur-3xl pointer-events-none"></div>
-                    
-                    <h2 class="font-heading font-bold text-xl mb-6 flex items-center gap-2">
-                        <i class="fa-solid fa-circle-play text-brand-500"></i>
-                        Thiết lập dịch video mới
-                    </h2>
-                    
-                    <form id="job-form" onsubmit="submitJob(event)" class="space-y-6">
+            <!-- TOP LEFT: Basic Setup -->
+            <div class="glass-panel rounded-3xl p-6 shadow-2xl relative overflow-hidden flex flex-col">
+                <div class="absolute -right-24 -top-24 w-48 h-48 bg-brand-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                <h2 class="font-heading font-bold text-xl mb-6 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-play text-brand-500"></i>
+                    Thiết lập dịch video mới
+                </h2>
+                <div class="space-y-6 flex-1 flex flex-col justify-between">
                         
                         <!-- URL Link Input -->
                         <div>
@@ -126,6 +121,29 @@
                                 <input type="url" id="video-url" required
                                     placeholder="Dán link video của bạn vào đây..." 
                                     class="block w-full pl-11 pr-4 py-4 bg-dark-900 border border-gray-800 rounded-2xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                            </div>
+                            <!-- Unified Video Preview with Subtitle Overlay -->
+                            <div id="url-video-preview-container" class="hidden mt-4 rounded-2xl overflow-hidden border border-gray-800 bg-black aspect-video relative shadow-lg">
+                                <!-- 1. Target Player Render Area -->
+                                <div id="video-player-target" class="w-full h-full absolute inset-0"></div>
+                                
+                                <!-- 2. Overlay Layer for Subtitle Style Customization (pointer-events-none so player controls remain clickable) -->
+                                <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 z-40">
+                                    <span class="absolute top-3 left-3 px-2 py-0.5 rounded bg-brand-600/20 border border-brand-500/20 text-[10px] font-bold text-brand-400 tracking-wider uppercase">Khung xem trước phụ đề trên video gốc</span>
+                                    
+                                    <!-- A mock Chinese subtitle representing the original subtitle to be blurred -->
+                                    <div id="mock-original-sub" class="absolute left-1/2 -translate-x-1/2 bottom-8 text-center text-[#ffcc00] font-sans text-xs font-semibold pointer-events-none drop-shadow">
+                                        他们像以前一样支持体。 (Sub gốc Trung Quốc)
+                                    </div>
+
+                                    <!-- The Blur Bar -->
+                                    <div id="mock-blur-bar" class="absolute left-0 right-0 h-10 bg-black/50 backdrop-blur-md pointer-events-none transition-all duration-150"></div>
+
+                                    <!-- Styled Subtitle Text -->
+                                    <div id="mock-sub-text" class="absolute left-1/2 -translate-x-1/2 text-center select-none pointer-events-none transition-all duration-150 font-bold italic text-white" style="width: 90%; text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000;">
+                                        BỌN HỌ VẪN CHỐNG LƯNG CHO CẬU NHƯ TRƯỚC ĐÂY.
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         
@@ -142,12 +160,134 @@
                             <!-- Voice Selector -->
                             <div>
                                 <label class="block text-sm font-semibold text-gray-400 mb-2">Giọng đọc lồng tiếng (Edge TTS)</label>
-                                <select id="voice-select" class="block w-full px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
-                                    <!-- Nạp động -->
-                                </select>
+                                <div class="flex gap-2">
+                                    <select id="voice-select" class="block flex-1 px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                                        <!-- Nạp động -->
+                                    </select>
+                                    <button type="button" onclick="playVoicePreview()" class="px-4 bg-brand-600/15 hover:bg-brand-600 text-brand-400 hover:text-white rounded-xl border border-brand-500/20 transition-all font-semibold flex items-center justify-center gap-1.5 glow-hover">
+                                        <i class="fa-solid fa-volume-high"></i> Thử giọng
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
+                        
+                            <!-- Translation Model -->
+                            <div class="mt-6">
+                                <label class="block text-sm font-semibold text-gray-400 mb-2">Mô hình Dịch thuật (AI Model)</label>
+                                <select id="translation-model" class="block w-full px-4 py-3.5 bg-dark-900 border border-gray-800 rounded-xl focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-white font-medium transition-all duration-200">
+                                    <option value="gemini" selected>Gemini API (Google - Tốc độ cao)</option>
+                                    <option value="qwen-local">Qwen Local (Ollama - Chạy trên máy bạn)</option>
+                                </select>
+                            </div>
+
+                        </div>
+            </div>
+
+            <!-- TOP RIGHT: Edit Tools -->
+            <div class="glass-panel rounded-3xl p-6 shadow-2xl relative overflow-hidden space-y-6">
+                <!-- Subtitle Customization Panel -->
+                        <div class="border-t border-gray-800 pt-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <div>
+                                    <span class="font-semibold block">Cấu hình Phụ đề & Che chữ gốc (Sub Trung/Anh)</span>
+                                    <span class="text-xs text-gray-500 block">Làm mờ phụ đề gốc tiếng Trung/Anh và in đè phụ đề tiếng Việt của bạn lên</span>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="sub-custom-toggle" checked onchange="toggleSubPanel()" class="sr-only peer">
+                                    <div class="w-14 h-7 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand-600"></div>
+                                </label>
+                            </div>
+                            
+                            <!-- Sub Panel -->
+                            <div id="sub-panel" class="bg-dark-900/50 p-6 rounded-2xl border border-gray-800/80 space-y-6">
+                                    <!-- Font family -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Font chữ phụ đề</label>
+                                        <select id="sub-font" class="block w-full px-3 py-2 bg-dark-900 border border-gray-850 rounded-lg text-sm outline-none focus:border-brand-500">
+                                            <option value="Arial" selected>Arial (Mặc định)</option>
+                                            <option value="Arial Black">Arial Black (Nét đậm/Dễ đọc)</option>
+                                            <option value="Impact">Impact (Đậm nét/Hiện đại)</option>
+                                            <option value="Tahoma">Tahoma</option>
+                                            <option value="Trebuchet MS">Trebuchet MS</option>
+                                        </select>
+                                    </div>
+                                    <!-- Font Size -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Cỡ chữ (Font size)</label>
+                                        <input type="number" id="sub-font-size" value="24" class="block w-full px-3 py-1.5 bg-dark-900 border border-gray-850 rounded-lg text-sm outline-none focus:border-brand-500">
+                                    </div>
+                                    <!-- Alignment -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Căn lề phụ đề</label>
+                                        <select id="sub-alignment" class="block w-full px-3 py-2 bg-dark-900 border border-gray-850 rounded-lg text-sm outline-none focus:border-brand-500">
+                                            <option value="2" selected>Dưới (Căn giữa dưới)</option>
+                                            <option value="5">Giữa (Căn giữa màn hình)</option>
+                                            <option value="8">Trên (Căn giữa trên)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <!-- Primary Color -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Màu chữ (Text color)</label>
+                                        <div class="flex gap-2">
+                                            <input type="color" id="sub-color" value="#FFFFFF" onchange="document.getElementById('sub-color-hex').value = this.value.toUpperCase()" class="w-10 h-9 p-0.5 bg-dark-900 border border-gray-850 rounded cursor-pointer">
+                                            <input type="text" id="sub-color-hex" value="#FFFFFF" oninput="document.getElementById('sub-color').value = this.value" class="flex-1 px-3 py-1.5 bg-dark-900 border border-gray-850 rounded-lg text-xs outline-none focus:border-brand-500 uppercase">
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Outline Color -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-2">Màu viền (Outline)</label>
+                                        <div class="flex gap-2">
+                                            <input type="color" id="sub-outline-color" value="#000000" onchange="document.getElementById('sub-outline-color-hex').value = this.value.toUpperCase()" class="w-10 h-9 p-0.5 bg-dark-900 border border-gray-850 rounded cursor-pointer">
+                                            <input type="text" id="sub-outline-color-hex" value="#000000" oninput="document.getElementById('sub-outline-color').value = this.value" class="flex-1 px-3 py-1.5 bg-dark-900 border border-gray-850 rounded-lg text-xs outline-none focus:border-brand-500 uppercase">
+                                        </div>
+                                    </div>
+
+                                    <!-- Outline Width -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-1">Độ dày viền: <span id="outline-width-label">3.0</span></label>
+                                        <input type="range" id="sub-outline-width" min="0" max="8" step="0.5" value="3" oninput="document.getElementById('outline-width-label').innerText = parseFloat(this.value).toFixed(1)" class="w-full accent-brand-500 bg-gray-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-gray-800/60 pt-4">
+                                    <!-- Margin Vertical -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-1">Khoảng cách lề dọc (MarginV): <span id="margin-v-label">30</span> px (Có thể kéo về 0 để sát đáy)</label>
+                                        <input type="range" id="sub-margin-v" min="0" max="300" step="1" value="30" oninput="document.getElementById('margin-v-label').innerText = this.value" class="w-full accent-brand-500 bg-gray-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+                                    </div>
+                                    <!-- Blur Height -->
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-400 mb-1">Chiều cao dải làm mờ nền: <span id="blur-h-label">80</span> px</label>
+                                        <input type="range" id="sub-blur-bar-h" min="30" max="250" step="5" value="80" oninput="document.getElementById('blur-h-label').innerText = this.value" class="w-full accent-brand-500 bg-gray-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+                                    </div>
+                                </div>
+
+                                <!-- Text Style Checkboxes -->
+                                <div class="flex flex-wrap gap-6 border-t border-gray-800/60 pt-4">
+                                    <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold">
+                                        <input type="checkbox" id="sub-bold" checked class="w-4 h-4 bg-dark-900 border-gray-800 text-brand-500 rounded focus:ring-brand-500">
+                                        In Đậm (Bold)
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold">
+                                        <input type="checkbox" id="sub-italic" checked class="w-4 h-4 bg-dark-900 border-gray-800 text-brand-500 rounded focus:ring-brand-500">
+                                        In Nghiêng (Italic)
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold">
+                                        <input type="checkbox" id="sub-uppercase" checked class="w-4 h-4 bg-dark-900 border-gray-800 text-brand-500 rounded focus:ring-brand-500">
+                                        Chữ IN HOA (Uppercase)
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold">
+                                        <input type="checkbox" id="sub-blur-bar" checked class="w-4 h-4 bg-dark-900 border-gray-800 text-brand-500 rounded focus:ring-brand-500">
+                                        Làm mờ nền che chữ Trung Quốc (Blur bar)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- Mode Toggle -->
                         <div class="border-t border-gray-800 pt-6">
@@ -256,10 +396,12 @@
                                 Bắt đầu dịch tự động
                             </button>
                         </div>
-                    </form>
-                </div>
+                    </div>
+        </div>
+    </form>
 
-                <!-- Active Job Progress Monitor -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- BOTTOM LEFT: Active Job Progress Monitor -->
                 <div id="active-job-panel" class="hidden glass-panel rounded-3xl p-6 shadow-2xl space-y-6 relative border border-brand-500/20">
                     <div class="absolute -left-24 -bottom-24 w-48 h-48 bg-brand-accent/5 rounded-full blur-3xl pointer-events-none"></div>
                     
@@ -355,8 +497,8 @@
 
             </div>
 
-            <!-- Right Column: History & Queue List -->
-            <div class="space-y-8">
+            <!-- BOTTOM RIGHT: History -->
+        <div class="space-y-8">
                 
                 <!-- History Center Panel -->
                 <div class="glass-panel rounded-3xl p-6 shadow-2xl flex flex-col h-[700px]">
@@ -459,31 +601,106 @@
                 { value: "vi-VN-NamMinhNeural", label: "Nam Minh (Nam)" }
             ],
             "English": [
-                { value: "en-US-JennyNeural", label: "Jenny (Female)" },
-                { value: "en-US-GuyNeural", label: "Guy (Male)" }
+                { value: "en-US-AriaNeural", label: "Aria (Nữ)" },
+                { value: "en-US-JennyNeural", label: "Jenny (Nữ)" },
+                { value: "en-US-GuyNeural", label: "Guy (Nam)" },
+                { value: "en-US-ChristopherNeural", label: "Christopher (Nam)" }
             ]
         };
 
         // Khi load trang
         window.addEventListener("DOMContentLoaded", () => {
+            // Cập nhật nghe thử & video preview trực tiếp khi gõ URL (Hỗ trợ YouTube, Bilibili, và HTML5 Video)
+            document.getElementById("video-url").addEventListener("input", function() {
+                const url = this.value.trim();
+                const container = document.getElementById("url-video-preview-container");
+                const target = document.getElementById("video-player-target");
+                
+                if (!url) {
+                    container.classList.add("hidden");
+                    target.innerHTML = "";
+                    return;
+                }
+
+                // 1. Nhận dạng YouTube
+                let ytId = null;
+                try {
+                    if (url.includes("youtube.com/watch")) {
+                        const urlParams = new URLSearchParams(new URL(url).search);
+                        ytId = urlParams.get("v");
+                    } else if (url.includes("youtu.be/")) {
+                        ytId = url.split("youtu.be/")[1].split("?")[0];
+                    } else if (url.includes("youtube.com/embed/")) {
+                        ytId = url.split("youtube.com/embed/")[1].split("?")[0];
+                    }
+                } catch (e) {}
+
+                // 2. Nhận dạng Bilibili
+                let biliId = null;
+                try {
+                    if (url.includes("bilibili.com/video/")) {
+                        const match = url.match(/video\/(BV[a-zA-Z0-9]+)/);
+                        if (match) biliId = match[1];
+                    }
+                } catch (e) {}
+
+                if (ytId) {
+                    container.classList.remove("hidden");
+                    target.innerHTML = `<iframe class="w-full h-full border-0" src="https://www.youtube.com/embed/${ytId}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+                } else if (biliId) {
+                    container.classList.remove("hidden");
+                    target.innerHTML = `<iframe class="w-full h-full border-0" src="//player.bilibili.com/player.html?bvid=${biliId}&page=1" scrolling="no" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>`;
+                } else if (url.match(/\.(mp4|webm|ogg|mov)$/i) || url.startsWith("http")) {
+                    // Fallback về HTML5 Video player nếu là link trực tiếp
+                    container.classList.remove("hidden");
+                    target.innerHTML = `<video class="w-full h-full object-cover" src="${url}" controls preload="metadata"></video>`;
+                } else {
+                    // Nếu không nhận dạng được link nhúng, có thể hiển thị một khung đen hoặc iframe chung
+                    container.classList.remove("hidden");
+                    target.innerHTML = `<div class="w-full h-full flex items-center justify-center bg-dark-900 border border-dashed border-gray-800 text-gray-500 text-xs p-4 text-center">Video nhúng (Link: ${url})</div>`;
+                }
+            });
+
+            // Lắng nghe sự thay đổi cấu hình phụ đề để cập nhật preview mẫu thời gian thực
+            const subPanel = document.getElementById("sub-panel");
+            if (subPanel) {
+                subPanel.addEventListener("input", updateMockSubtitlePreview);
+                subPanel.addEventListener("change", updateMockSubtitlePreview);
+                // Khởi động xem trước ban đầu
+                setTimeout(updateMockSubtitlePreview, 500);
+            }
 
             updateVoiceOptions();
             loadHistory();
             checkDriveAuth();
         });
 
-        function updateVoiceOptions() {
-            const lang = document.getElementById("target-lang").value;
+        async function updateVoiceOptions() {
             const select = document.getElementById("voice-select");
-            select.innerHTML = "";
+            select.innerHTML = "<option>Đang nạp giọng đọc...</option>";
             
-            const options = VOICES_MAP[lang] || VOICES_MAP["Vietnamese"];
-            options.forEach(opt => {
-                const el = document.createElement("option");
-                el.value = opt.value;
-                el.innerText = opt.label;
-                select.appendChild(el);
-            });
+            try {
+                const res = await fetch(`${API_URL}/api/voices`);
+                if (!res.ok) throw new Error("Lỗi API");
+                const voices = await res.json();
+                
+                const lang = document.getElementById("target-lang").value;
+                select.innerHTML = "";
+                
+                const options = voices[lang] || [];
+                options.forEach(opt => {
+                    const el = document.createElement("option");
+                    el.value = opt.value;
+                    el.innerText = opt.label;
+                    select.appendChild(el);
+                });
+            } catch (err) {
+                console.error("Lỗi khi tải danh sách giọng đọc:", err);
+                select.innerHTML = `
+                    <option value="vi-VN-HoaiMy-Default">Hoài My - Mặc định (Nữ)</option>
+                    <option value="vi-VN-NamMinh-Default">Nam Minh - Mặc định (Nam)</option>
+                `;
+            }
         }
 
         function toggleReupPanel() {
@@ -494,6 +711,36 @@
             } else {
                 panel.classList.add("hidden");
             }
+        }
+
+        function toggleSubPanel() {
+            const show = document.getElementById("sub-custom-toggle").checked;
+            const panel = document.getElementById("sub-panel");
+            if (show) {
+                panel.classList.remove("hidden");
+            } else {
+                panel.classList.add("hidden");
+            }
+        }
+
+        let previewAudio = null;
+        function playVoicePreview() {
+            const select = document.getElementById("voice-select");
+            const voiceId = select.value;
+            if (!voiceId) {
+                alert("Vui lòng chọn một giọng đọc trước.");
+                return;
+            }
+            
+            if (previewAudio) {
+                previewAudio.pause();
+            }
+            
+            previewAudio = new Audio(`${API_URL}/api/voice/preview?voice_id=${voiceId}`);
+            previewAudio.play().catch(err => {
+                console.error("Lỗi phát preview:", err);
+                alert("Không thể phát thử giọng đọc này. Thử lại sau.");
+            });
         }
 
         // --- Modals ---
@@ -560,14 +807,36 @@
             const url = document.getElementById("video-url").value;
             const target_lang = document.getElementById("target-lang").value;
             const voice = document.getElementById("voice-select").value;
+            const translation_model = document.getElementById("translation-model").value;
             const isReup = document.getElementById("reup-mode-toggle").checked;
+            
+            const isSubCustom = document.getElementById("sub-custom-toggle").checked;
             
             let payload = {
                 url,
                 target_lang,
                 voice,
+                translation_model,
                 mode: isReup ? "reup" : "standard"
             };
+
+            // Nạp cấu hình phụ đề tùy chỉnh
+            if (isSubCustom) {
+                payload.sub_font = document.getElementById("sub-font").value;
+                payload.sub_font_size = parseFloat(document.getElementById("sub-font-size").value);
+                payload.sub_bold = document.getElementById("sub-bold").checked;
+                payload.sub_italic = document.getElementById("sub-italic").checked;
+                payload.sub_uppercase = document.getElementById("sub-uppercase").checked;
+                payload.sub_color = document.getElementById("sub-color").value;
+                payload.sub_outline_color = document.getElementById("sub-outline-color").value;
+                payload.sub_outline_width = parseFloat(document.getElementById("sub-outline-width").value);
+                payload.sub_alignment = parseInt(document.getElementById("sub-alignment").value);
+                payload.sub_margin_v = parseInt(document.getElementById("sub-margin-v").value);
+                payload.sub_blur_bar = document.getElementById("sub-blur-bar").checked;
+                payload.sub_blur_bar_h = parseInt(document.getElementById("sub-blur-bar-h").value);
+            } else {
+                payload.sub_blur_bar = false;
+            }
 
             if (isReup) {
                 payload.speed = parseFloat(document.getElementById("reup-speed").value);
@@ -994,6 +1263,108 @@
                     console.error("Lỗi khi kiểm tra trạng thái upload:", err);
                 }
             }, 2000);
+        }
+
+        // Cập nhật xem trước phụ đề mẫu theo các tùy chỉnh thời gian thực
+        function updateMockSubtitlePreview() {
+            const font = document.getElementById("sub-font").value;
+            const fontSize = parseFloat(document.getElementById("sub-font-size").value);
+            const bold = document.getElementById("sub-bold").checked;
+            const italic = document.getElementById("sub-italic").checked;
+            const uppercase = document.getElementById("sub-uppercase").checked;
+            const color = document.getElementById("sub-color").value;
+            const outlineColor = document.getElementById("sub-outline-color").value;
+            const outlineWidth = parseFloat(document.getElementById("sub-outline-width").value);
+            const alignment = parseInt(document.getElementById("sub-alignment").value);
+            const marginV = parseInt(document.getElementById("sub-margin-v").value);
+            const blurBar = document.getElementById("sub-blur-bar").checked;
+            const blurBarH = parseInt(document.getElementById("sub-blur-bar-h").value);
+
+            const mockText = document.getElementById("mock-sub-text");
+            const mockBlur = document.getElementById("mock-blur-bar");
+            const mockOrig = document.getElementById("mock-original-sub");
+
+            if (!mockText || !mockBlur || !mockOrig) return;
+
+            // Đồng bộ mã hex text input bên cạnh color picker
+            const hexColorInput = document.getElementById("sub-color-hex");
+            if (hexColorInput && hexColorInput.value.toUpperCase() !== color.toUpperCase()) {
+                hexColorInput.value = color.toUpperCase();
+            }
+            const hexOutlineInput = document.getElementById("sub-outline-color-hex");
+            if (hexOutlineInput && hexOutlineInput.value.toUpperCase() !== outlineColor.toUpperCase()) {
+                hexOutlineInput.value = outlineColor.toUpperCase();
+            }
+
+            // 1. Định dạng text
+            mockText.style.fontFamily = font;
+            mockText.style.fontSize = `${fontSize * 0.7}px`; // scale nhỏ lại cho vừa khung
+            mockText.style.fontWeight = bold ? "bold" : "normal";
+            mockText.style.fontStyle = italic ? "italic" : "normal";
+            mockText.style.color = color;
+            
+            // Vẽ viền chữ ASS bằng css text-shadow nhiều hướng
+            mockText.style.textShadow = `
+                -${outlineWidth}px -${outlineWidth}px 0 ${outlineColor},  
+                 ${outlineWidth}px -${outlineWidth}px 0 ${outlineColor},
+                -${outlineWidth}px  ${outlineWidth}px 0 ${outlineColor},
+                 ${outlineWidth}px  ${outlineWidth}px 0 ${outlineColor},
+                -${outlineWidth}px 0 0 ${outlineColor},
+                 ${outlineWidth}px 0 0 ${outlineColor},
+                 0 -${outlineWidth}px 0 ${outlineColor},
+                 0  ${outlineWidth}px 0 ${outlineColor}
+            `;
+            
+            let originalText = "Bọn họ vẫn chống lưng cho cậu như trước đây.";
+            mockText.innerText = uppercase ? originalText.toUpperCase() : originalText;
+
+            // 2. Tính toán lề và căn vị trí (phù hợp với khung preview 200px)
+            const marginPct = (marginV / 380) * 100; // max margin 380 là 100%
+            mockBlur.style.height = `${blurBarH * 0.5}px`;
+
+            if (alignment === 8) { // Top
+                mockText.style.top = `calc(10% + ${marginPct * 0.4}%)`;
+                mockText.style.bottom = "auto";
+                mockText.style.transform = "translateX(-50%)";
+                
+                mockBlur.style.top = `calc(10% + ${marginPct * 0.4}% - ${blurBarH * 0.25}px + 12px)`;
+                mockBlur.style.bottom = "auto";
+                mockBlur.style.transform = "none";
+                
+                mockOrig.style.top = "10px";
+                mockOrig.style.bottom = "auto";
+            } else if (alignment === 5) { // Middle
+                mockText.style.top = "50%";
+                mockText.style.bottom = "auto";
+                mockText.style.transform = "translate(-50%, -50%)";
+                
+                mockBlur.style.top = "50%";
+                mockBlur.style.bottom = "auto";
+                mockBlur.style.transform = "translateY(-50%)";
+                
+                mockOrig.style.top = "40%";
+                mockOrig.style.bottom = "auto";
+            } else { // Bottom (2)
+                mockText.style.bottom = `calc(10% + ${marginPct * 0.4}%)`;
+                mockText.style.top = "auto";
+                mockText.style.transform = "translateX(-50%)";
+                
+                mockBlur.style.bottom = `calc(10% + ${marginPct * 0.4}% - ${blurBarH * 0.25}px + 12px)`;
+                mockBlur.style.top = "auto";
+                mockBlur.style.transform = "none";
+                
+                mockOrig.style.bottom = "20px";
+                mockOrig.style.top = "auto";
+            }
+
+            // 3. Làm mờ và che sub gốc
+            if (blurBar) {
+                mockBlur.classList.remove("hidden");
+                mockOrig.style.filter = "blur(3.5px)";
+            } else {
+                mockBlur.classList.add("hidden");
+                mockOrig.style.filter = "none";
+            }
         }
     </script>
 </body>

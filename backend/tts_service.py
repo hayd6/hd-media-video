@@ -5,7 +5,7 @@ import wave
 import array
 import logging
 import edge_tts
-from config import FFMPEG_PATH, DOWNLOAD_DIR
+from config import FFMPEG_PATH, DOWNLOAD_DIR, VOICES_CONFIG
 
 logger = logging.getLogger("tts_service")
 
@@ -95,8 +95,17 @@ async def generate_speech_for_segment(text: str, voice: str, target_duration: fl
     temp_tts_path = output_path + ".temp.mp3"
     temp_wav_path = output_path + ".temp.wav"
     
-    # 1. Gọi Edge TTS sinh file MP3
-    communicate = edge_tts.Communicate(text, voice)
+    # 1. Gọi Edge TTS sinh file MP3 (phân tích voice từ cấu hình tùy chỉnh)
+    voice_name = voice
+    rate = "+0%"
+    pitch = "+0Hz"
+    if voice in VOICES_CONFIG:
+        cfg = VOICES_CONFIG[voice]
+        voice_name = cfg["voice"]
+        rate = cfg["rate"]
+        pitch = cfg["pitch"]
+        
+    communicate = edge_tts.Communicate(text, voice_name, rate=rate, pitch=pitch)
     await communicate.save(temp_tts_path)
     
     # 2. Chuyển sang WAV 16kHz Mono bằng FFmpeg để chuẩn hóa
@@ -184,17 +193,21 @@ async def generate_dubbed_track_async(translated_segments: list, voice: str, tot
     
     part_paths = []
     starts = []
+    tasks = []
     
-    # 1. Sinh tiếng nói cho từng phân đoạn phụ đề dịch
+    # 1. Tạo các tác vụ sinh tiếng nói song song cho từng phân đoạn
     for i, seg in enumerate(translated_segments):
         target_dur = seg["end"] - seg["start"]
         part_path = os.path.join(temp_dir, f"part_{i}.wav")
         
-        await generate_speech_for_segment(seg["text"], voice, target_dur, part_path)
+        tasks.append(generate_speech_for_segment(seg["text"], voice, target_dur, part_path))
         
         part_paths.append(part_path)
         starts.append(seg["start"])
         
+    # Chạy song song toàn bộ bằng asyncio.gather để tăng tốc độ gấp nhiều lần
+    await asyncio.gather(*tasks)
+    
     # 2. Trộn các phân đoạn thành một file âm thanh duy nhất khớp thời lượng video gốc
     dubbed_track_path = os.path.join(DOWNLOAD_DIR, f"job_{job_id}_dubbed.wav")
     mix_audio_tracks(part_paths, starts, total_duration, dubbed_track_path)

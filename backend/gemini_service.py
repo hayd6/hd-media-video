@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import base64
 import json
@@ -9,32 +10,234 @@ from config import FFMPEG_PATH, GEMINI_MODEL
 
 logger = logging.getLogger("gemini_service")
 
+
+def _get_api_keys() -> list:
+    """
+    Đọc danh sách Gemini API Key từ biến môi trường.
+    Hỗ trợ nhiều key theo thứ tự: GEMINI_API_KEY_1, GEMINI_API_KEY_2, ...
+    Sau đó fallback về GEMINI_API_KEY (key duy nhất) nếu không có key số.
+    """
+    keys = []
+    for i in range(1, 10):
+        key = os.environ.get(f"GEMINI_API_KEY_{i}")
+        if key:
+            keys.append(key.strip())
+    if not keys:
+        single = os.environ.get("GEMINI_API_KEY")
+        if single:
+            keys.append(single.strip())
+    return keys
+
+
+def _parse_retry_delay(response_text: str) -> float:
+    """
+    Phân tích `retryDelay` từ phản hồi lỗi 429 của Google để biết chính xác
+    cần chờ bao nhiêu giây trước khi thử lại.
+    """
+    try:
+        data = json.loads(response_text)
+        details = data.get("error", {}).get("details", [])
+        for detail in details:
+            if detail.get("@type") == "type.googleapis.com/google.rpc.RetryInfo":
+                delay_str = detail.get("retryDelay", "0s")
+                # Định dạng có thể là "35s" hoặc "35.5s"
+                match = re.search(r"([\d.]+)s", delay_str)
+                if match:
+                    return float(match.group(1)) + 2  # Cộng thêm 2s buffer
+    except Exception:
+        pass
+    return 10.0  # Mặc định chờ 10 giây
+
+
+def _is_quota_exhausted(response_text: str) -> bool:
+    """
+    Kiểm tra xem lỗi 429 có phải do quota NGÀY đã hết hoàn toàn không.
+    
+    Phân biệt 2 loại giới hạn:
+    - Giới hạn phút (RPM): retryDelay thường < 60 giây → CHỜ và thử lại cùng key
+    - Hết quota ngày (RPD): retryDelay rất dài (> 60 giây) → CHUYỂN sang key khác
+    """
+    if 'GenerateRequestsPerDayPerProjectPerModel' not in response_text and '"quotaValue": "0"' not in response_text:
+        return False
+    # Chỉ coi là hết quota ngày nếu thời gian chờ đề nghị >= 60 giây
+    delay = _parse_retry_delay(response_text)
+    return delay >= 62  # 60s + 2s buffer chúng ta đã cộng thêm = 62
+
+
+def _extract_gemini_error(response_text: str) -> tuple:
+    """Lay ma loi va thong diep loi tu response JSON cua Gemini."""
+    try:
+        error = json.loads(response_text).get("error", {})
+        return error.get("status", ""), error.get("message", "")
+    except Exception:
+        return "", response_text
+
+
+def _is_api_key_error(response_text: str) -> bool:
+    """Nhan dien cac loi thuoc ve API key de co the thu key tiep theo."""
+    status, message = _extract_gemini_error(response_text)
+    text = f"{status} {message}".lower()
+    markers = [
+        "api_key_invalid",
+        "api key not valid",
+        "invalid api key",
+        "permission_denied",
+        "consumer suspended",
+        "api has not been used",
+        "api has not been enabled",
+        "the caller does not have permission",
+    ]
+    return any(marker in text for marker in markers)
+
+
+def _is_model_error(response_text: str) -> bool:
+    """Nhan dien loi model khong ton tai/khong kha dung."""
+    status, message = _extract_gemini_error(response_text)
+    text = f"{status} {message}".lower()
+    return (
+        "not_found" in text
+        or "is no longer available" in text
+        or ("model" in text and "not found" in text)
+    )
+
+
+def gemini_post_request_with_key_rotation(build_url_fn, headers: dict, json_payload: dict, max_retries: int = 5, timeout: int = 60) -> requests.Response:
+    """
+    Gọi Gemini API với cơ chế xoay vòng API Key (Key Rotation).
+    - Khi một key bị hết quota ngày (retryDelay >= 60s): CHUYỂN sang key tiếp theo ngay
+    - Khi một key bị giới hạn phút (retryDelay < 60s): CHỜ rồi thử lại
+    - Khi một key bị lỗi kết nối (ConnectionError): CHUYỂN sang key tiếp theo
+    `build_url_fn` là một hàm nhận vào api_key và trả về URL hoàn chỉnh.
+    """
+    keys = _get_api_keys()
+    if not keys:
+        raise Exception("Không tìm thấy GEMINI_API_KEY trong môi trường. Vui lòng kiểm tra tệp .env.")
+
+    last_response = None
+    last_err = None
+
+    for key_index, api_key in enumerate(keys):
+        logger.info(f"Đang sử dụng Gemini API Key #{key_index + 1}/{len(keys)}...")
+        url = build_url_fn(api_key)
+        key_should_switch = False
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"  Lần gọi {attempt}/{max_retries} (timeout={timeout}s)...")
+                response = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+                last_response = response
+
+                if response.status_code == 429:
+                    if _is_quota_exhausted(response.text):
+                        # Hết quota ngày → chuyển key ngay
+                        logger.warning(f"  Key #{key_index + 1} đã hết quota ngày. Chuyển sang key tiếp theo...")
+                        key_should_switch = True
+                        break
+                    else:
+                        # Giới hạn phút → chờ đúng thời gian Google đề nghị rồi thử lại
+                        wait_sec = _parse_retry_delay(response.text)
+                        logger.warning(f"  Lỗi 429 (giới hạn phút). Chờ {wait_sec:.0f}s rồi thử lại với key #{key_index + 1}...")
+                        time.sleep(wait_sec)
+                        continue
+
+                if response.status_code in [400, 401, 403] and _is_api_key_error(response.text):
+                    logger.warning(f"  Key #{key_index + 1} khong hop le/khong co quyen. Chuyen sang key tiep theo...")
+                    key_should_switch = True
+                    break
+
+                if response.status_code == 404 and _is_model_error(response.text):
+                    _, message = _extract_gemini_error(response.text)
+                    raise Exception(
+                        f"Gemini model '{GEMINI_MODEL}' khong kha dung: {message}\n"
+                        "Hay doi GEMINI_MODEL trong .env sang model con ho tro, vi du: gemini-2.0-flash"
+                    )
+
+                if response.status_code in [500, 502, 503, 504]:
+                    logger.warning(f"  Lỗi máy chủ tạm thời {response.status_code}. Chờ rồi thử lại...")
+                    time.sleep(5 * attempt)
+                    continue
+
+                return response  # Thành công!
+
+            except requests.exceptions.Timeout as e:
+                # Timeout → thử lại với cùng key
+                logger.warning(f"  Timeout (Lần {attempt}/{max_retries}). Thử lại...")
+                last_err = e
+                time.sleep(3)
+
+            except requests.exceptions.ConnectionError as e:
+                # Lỗi kết nối (connection reset, refused) → chuyển sang key tiếp theo
+                logger.warning(f"  Lỗi kết nối với key #{key_index + 1}: {e}. Chuyển sang key tiếp theo...")
+                last_err = e
+                key_should_switch = True
+                break
+
+        if key_should_switch:
+            continue  # Thử key tiếp theo
+
+        # Tất cả lần thử với key này đều thất bại (không phải quota ngày)
+        if last_err:
+            raise last_err
+        if last_response:
+            raise Exception(f"Gemini API Error (status {last_response.status_code}): {last_response.text}")
+
+
+    # Tất cả key đều hết quota
+    key_count = len(keys)
+    status_info = f" (Mã HTTP {last_response.status_code}: {last_response.text})" if last_response else ""
+    if last_response and _is_api_key_error(last_response.text):
+        raise Exception(
+            f"Tất cả {key_count} Gemini API Key đều không hợp lệ hoặc không có quyền gọi API.{status_info}\n\n"
+            "Hãy kiểm tra lại key trong .env. Gemini API key thường được tạo tại: https://aistudio.google.com/apikey"
+        )
+    if key_count == 1:
+        raise Exception(
+            f"Không thể kết nối tới Gemini API sau nhiều lần thử lại.{status_info}\n\n"
+            "💡 API Key của bạn đã hết quota miễn phí cho hôm nay.\n"
+            "Hãy tạo thêm API key tại: https://aistudio.google.com/apikey\n"
+            "Sau đó thêm vào .env: GEMINI_API_KEY_2=<key mới>"
+        )
+    raise Exception(
+        f"Tất cả {key_count} API Key đều đã hết quota miễn phí cho hôm nay!{status_info}\n\n"
+        "💡 Tạo thêm API key tại: https://aistudio.google.com/apikey và thêm GEMINI_API_KEY_3=..."
+    )
+
+
 def gemini_post_request(url: str, headers: dict, json_payload: dict, max_retries: int = 3, timeout: int = 120) -> requests.Response:
     """
-    Thực hiện gửi yêu cầu POST đến Gemini API với cơ chế tự động thử lại (Retry) và Timeout lớn
-    để phòng tránh các lỗi nghẽn mạng hoặc xử lý quá hạn từ phía máy chủ Google.
+    Gọi Gemini API với cơ chế Retry + chờ đúng thời gian Google gợi ý (retryDelay).
+    Wrapper cũ được giữ lại để tương thích, nhưng nội bộ sẽ tự xử lý retry thông minh.
     """
     last_err = None
+    last_response = None
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"Đang gọi Gemini API (Lần {attempt}/{max_retries}, timeout={timeout}s)...")
             response = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
-            
-            # Tự động thử lại nếu gặp lỗi nghẽn/hạn chế (429) hoặc lỗi máy chủ tạm thời (5xx)
-            if response.status_code in [429, 500, 502, 503, 504]:
-                logger.warning(f"Gemini API trả về lỗi tạm thời {response.status_code}. Đang chờ để thử lại...")
-                time.sleep(2 * attempt)
+            last_response = response
+
+            if response.status_code == 429:
+                wait_sec = _parse_retry_delay(response.text)
+                logger.warning(f"Gemini API trả về 429. Chờ {wait_sec:.0f} giây rồi thử lại...")
+                time.sleep(wait_sec)
                 continue
-                
+
+            if response.status_code in [500, 502, 503, 504]:
+                logger.warning(f"Gemini API trả về lỗi tạm thời {response.status_code}. Đang chờ để thử lại...")
+                time.sleep(5 * attempt)
+                continue
+
             return response
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             logger.warning(f"Lỗi Timeout hoặc Kết nối khi gọi Gemini API (Lần {attempt}): {e}")
             last_err = e
             time.sleep(3 * attempt)
-            
+
     if last_err:
         raise last_err
-    raise Exception("Không thể kết nối tới Gemini API sau nhiều lần thử lại.")
+
+    status_info = f" (Mã HTTP {last_response.status_code}: {last_response.text})" if last_response else ""
+    raise Exception(f"Không thể kết nối tới Gemini API sau nhiều lần thử lại.{status_info}")
 
 def compress_audio_to_mp3(wav_path: str) -> str:
     """
@@ -115,15 +318,16 @@ def transcribe_audio(audio_path: str, api_key: str) -> list:
         except Exception:
             pass
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
-    
+    def build_url(key):
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={key}"
+
     prompt = (
         "Lắng nghe kỹ file âm thanh này và nhận diện giọng nói (Speech-to-Text). "
         "Hãy trích xuất chính xác nội dung hội thoại thành danh sách các phân đoạn (segments) "
         "kèm mốc thời gian bằng chính NGÔN NGỮ GỐC được nói trong âm thanh. "
         "Chia nhỏ các phân đoạn hợp lý (mỗi phân đoạn tối đa 2 đến 7 giây, khớp với nhịp điệu của người nói)."
     )
-    
+
     payload = {
         "contents": [
             {
@@ -163,13 +367,13 @@ def transcribe_audio(audio_path: str, api_key: str) -> list:
             }
         }
     }
-    
+
     headers = {"Content-Type": "application/json"}
-    
-    response = gemini_post_request(url, headers=headers, json_payload=payload)
+
+    response = gemini_post_request_with_key_rotation(build_url, headers=headers, json_payload=payload)
     if response.status_code != 200:
         raise Exception(f"Gemini API Error (status {response.status_code}): {response.text}")
-        
+
     res_data = response.json()
     try:
         text_response = res_data["candidates"][0]["content"]["parts"][0]["text"]
@@ -180,21 +384,22 @@ def transcribe_audio(audio_path: str, api_key: str) -> list:
 
 def translate_segments(segments: list, target_lang: str, api_key: str) -> list:
     """
-    Dịch danh sách các phân đoạn hội thoại sang ngôn ngữ đích sử dụng Gemini 2.5 Flash.
+    Dịch danh sách các phân đoạn hội thoại sang ngôn ngữ đích sử dụng Gemini Flash.
     Giữ nguyên các mốc thời gian start/end.
     """
     if not segments:
         return []
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
-    
+
+    def build_url(key):
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={key}"
+
     prompt = (
         f"Hãy đóng vai trò là một biên dịch viên phụ đề chuyên nghiệp. "
         f"Dịch nội dung văn bản (trường 'text') trong danh sách các phân đoạn hội thoại sau sang ngôn ngữ: {target_lang}. "
         f"Yêu cầu: Dịch trôi chảy, tự nhiên, văn phong phù hợp với ngữ cảnh video, tránh dịch từng từ máy móc. "
         f"Giữ nguyên chính xác mốc thời gian 'start' và 'end' của từng phân đoạn."
     )
-    
+
     payload = {
         "contents": [
             {
@@ -211,12 +416,8 @@ def translate_segments(segments: list, target_lang: str, api_key: str) -> list:
                 "items": {
                     "type": "OBJECT",
                     "properties": {
-                        "start": {
-                            "type": "NUMBER"
-                        },
-                        "end": {
-                            "type": "NUMBER"
-                        },
+                        "start": {"type": "NUMBER"},
+                        "end": {"type": "NUMBER"},
                         "text": {
                             "type": "STRING",
                             "description": "Nội dung lời thoại đã được dịch sang ngôn ngữ đích"
@@ -227,13 +428,13 @@ def translate_segments(segments: list, target_lang: str, api_key: str) -> list:
             }
         }
     }
-    
+
     headers = {"Content-Type": "application/json"}
-    
-    response = gemini_post_request(url, headers=headers, json_payload=payload)
+
+    response = gemini_post_request_with_key_rotation(build_url, headers=headers, json_payload=payload)
     if response.status_code != 200:
         raise Exception(f"Gemini Translation API Error (status {response.status_code}): {response.text}")
-        
+
     res_data = response.json()
     try:
         text_response = res_data["candidates"][0]["content"]["parts"][0]["text"]
@@ -246,15 +447,16 @@ def generate_seo(transcript_text: str, target_lang: str, api_key: str) -> dict:
     """
     Sinh nội dung SEO (Tiêu đề, mô tả tóm tắt, thẻ hashtags) dựa vào nội dung hội thoại của video.
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
-    
+    def build_url(key):
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={key}"
+
     prompt = (
         f"Dựa vào nội dung cuộc hội thoại trong video sau đây, hãy viết tiêu đề SEO cuốn hút, "
         f"mô tả tóm tắt nội dung hấp dẫn kèm các từ khóa hashtags (tags) phù hợp để đăng YouTube/TikTok. "
         f"Ngôn ngữ viết: {target_lang}.\n\n"
         f"Nội dung hội thoại:\n\"{transcript_text}\""
     )
-    
+
     payload = {
         "contents": [
             {
@@ -283,15 +485,15 @@ def generate_seo(transcript_text: str, target_lang: str, api_key: str) -> dict:
             }
         }
     }
-    
+
     headers = {"Content-Type": "application/json"}
-    
+
     logger.info("Đang gọi Gemini API để sinh tiêu đề & SEO cho video...")
-    response = gemini_post_request(url, headers=headers, json_payload=payload)
-    
+    response = gemini_post_request_with_key_rotation(build_url, headers=headers, json_payload=payload)
+
     if response.status_code != 200:
         raise Exception(f"Gemini SEO API Error (status {response.status_code}): {response.text}")
-        
+
     res_data = response.json()
     try:
         text_response = res_data["candidates"][0]["content"]["parts"][0]["text"]

@@ -10,6 +10,7 @@ import pysubs2
 import database
 import downloader
 import gemini_service
+import qwen_service
 import tts_service
 import video_service
 import drive_service
@@ -22,17 +23,73 @@ def add_log(job_id: int, step: str, message: str):
     database.add_job_log(job_id, step, message)
     logger.info(f"[Job {job_id}][{step}] {message}")
 
-def save_segments_to_subtitle(segments: list, output_path: str):
+def save_segments_to_subtitle(segments: list, output_path: str, job: dict = None):
     """
     Chuyển đổi danh sách phân đoạn JSON sang file phụ đề (SRT hoặc ASS) sử dụng pysubs2.
+    Áp dụng các cấu hình font chữ, in đậm, nghiêng, in hoa, màu sắc từ job (đối với tệp ASS).
     """
     subs = pysubs2.SSAFile()
+    
+    # 1. Các giá trị mặc định của hệ thống
+    font_name = "Arial"
+    font_size = 24
+    bold = True
+    italic = True
+    uppercase = True
+    color = "#FFFFFF"
+    outline_color = "#000000"
+    outline_width = 3.0
+    alignment = 2
+    margin_v = 30
+    
+    if job:
+        font_name = job.get("sub_font") or font_name
+        font_size = job.get("sub_font_size") or font_size
+        bold = job.get("sub_bold") if job.get("sub_bold") is not None else bold
+        italic = job.get("sub_italic") if job.get("sub_italic") is not None else italic
+        uppercase = job.get("sub_uppercase") if job.get("sub_uppercase") is not None else uppercase
+        color = job.get("sub_color") or color
+        outline_color = job.get("sub_outline_color") or outline_color
+        outline_width = job.get("sub_outline_width") if job.get("sub_outline_width") is not None else outline_width
+        alignment = job.get("sub_alignment") if job.get("sub_alignment") is not None else alignment
+        margin_v = job.get("sub_margin_v") if job.get("sub_margin_v") is not None else margin_v
+
+    # Helper chuyển hex màu #RRGGBB sang RGB cho pysubs2
+    def parse_hex_color(hex_color: str):
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) == 6:
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            return r, g, b
+        return 255, 255, 255
+
+    r, g, b = parse_hex_color(color)
+    or_r, or_g, or_b = parse_hex_color(outline_color)
+    
+    # Thiết lập style
+    style = pysubs2.SSAStyle()
+    style.fontname = font_name
+    style.fontsize = font_size
+    style.bold = -1 if bold else 0
+    style.italic = -1 if italic else 0
+    style.primarycolor = pysubs2.Color(r, g, b, 0)
+    style.outlinecolor = pysubs2.Color(or_r, or_g, or_b, 0)
+    style.outline = outline_width
+    style.alignment = alignment
+    style.marginv = margin_v
+    
+    subs.styles["Default"] = style
+    
     for seg in segments:
         start_ms = int(seg["start"] * 1000)
         end_ms = int(seg["end"] * 1000)
         text = seg["text"].replace("\n", " ").strip()
+        if uppercase:
+            text = text.upper()
         event = pysubs2.SSAEvent(start=start_ms, end=end_ms, text=text)
         subs.append(event)
+        
     subs.save(output_path)
 
 def execute_pipeline(job_id: int):
@@ -53,12 +110,23 @@ def execute_pipeline(job_id: int):
     add_log(job_id, "Init", "Bắt đầu xử lý Job dịch video.")
     
     try:
-        # Lấy API Key từ cấu hình Job hoặc biến môi trường
-        gemini_key = job.get("gemini_key") or os.environ.get("GEMINI_API_KEY")
+        # Lấy API Key từ cấu hình Job hoặc biến môi trường (hỗ trợ nhiều key xoay vòng)
+        gemini_key = job.get("gemini_key")
+        if not gemini_key:
+            # Thử GEMINI_API_KEY_1, GEMINI_API_KEY_2, ... trước
+            for i in range(1, 10):
+                k = os.environ.get(f"GEMINI_API_KEY_{i}")
+                if k:
+                    gemini_key = k.strip()
+                    break
+            # Fallback về GEMINI_API_KEY (key đơn cũ)
+            if not gemini_key:
+                gemini_key = os.environ.get("GEMINI_API_KEY")
+
         if not gemini_key:
             raise ValueError(
-                "Không tìm thấy Gemini API Key. Vui lòng truyền khóa API trong yêu cầu "
-                "hoặc thiết lập biến môi trường GEMINI_API_KEY."
+                "Không tìm thấy Gemini API Key. Vui lòng thiết lập biến môi trường "
+                "GEMINI_API_KEY_1 (hoặc GEMINI_API_KEY) trong tệp .env."
             )
 
         # --- BƯỚC 2: TẢI VIDEO & TRÍCH XUẤT ÂM THANH (PHASE 2) ---
@@ -121,19 +189,26 @@ def execute_pipeline(job_id: int):
 
         # --- BƯỚC 4: DỊCH THUẬT AI (PHASE 4) ---
         database.update_job(job_id, current_step="Translate", progress=45)
-        add_log(job_id, "Translate", f"Đang dịch phụ đề sang tiếng {job['target_lang']} bằng Gemini API...")
-        
-        translated_segments = gemini_service.translate_segments(
-            original_segments, 
-            job["target_lang"], 
-            gemini_key
-        )
+        translation_model = job.get("translation_model", "gemini")
+        if translation_model == "qwen-local":
+            add_log(job_id, "Translate", f"Đang dịch phụ đề sang tiếng {job['target_lang']} bằng Qwen Local (Ollama)...")
+            translated_segments = qwen_service.translate_segments(
+                original_segments,
+                job["target_lang"]
+            )
+        else:
+            add_log(job_id, "Translate", f"Đang dịch phụ đề sang tiếng {job['target_lang']} bằng Gemini API...")
+            translated_segments = gemini_service.translate_segments(
+                original_segments, 
+                job["target_lang"], 
+                gemini_key
+            )
         
         translated_srt_path = os.path.join(OUTPUT_DIR, f"job_{job_id}_translated.srt")
         translated_ass_path = os.path.join(OUTPUT_DIR, f"job_{job_id}_translated.ass")
         
         save_segments_to_subtitle(translated_segments, translated_srt_path)
-        save_segments_to_subtitle(translated_segments, translated_ass_path)
+        save_segments_to_subtitle(translated_segments, translated_ass_path, job=job)
         
         database.update_job(
             job_id, 
